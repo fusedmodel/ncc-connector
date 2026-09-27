@@ -237,10 +237,17 @@ const (
 	GrantArtifact = "artifact" // 可拉取我命名空间下的私有 / 草稿制品
 	GrantNode     = "node"     // 可看到并连接我的私有托管节点
 	GrantConfig   = "config"   // 可读取我的非公开配置（配置托管）
+	// GrantTrace 可读取我命名空间下的运行轨迹（轨迹默认私有，跨人看要显式授权）。
+	GrantTrace = "trace"
+	// GrantState 可读取我命名空间下的三样**状态**：知识库 / 记忆 / 检查点。
+	//
+	// 有意只开一个种类（而不是 kb/mem/ckpt 各一个）：这三样在语义上是"我的 Agent 的状态"，
+	// 授权模型里先给它一个粒度；真要"只放 KB 不放记忆"再拆（PRD 里记为取舍）。
+	GrantState = "state"
 )
 
 // GrantKinds 允许的授权种类（CLI 侧 `ncc grant set --kind` 的取值来源）。
-var GrantKinds = []string{GrantArtifact, GrantNode, GrantConfig}
+var GrantKinds = []string{GrantArtifact, GrantNode, GrantConfig, GrantTrace, GrantState}
 
 // ValidGrantKind 校验授权种类。
 func ValidGrantKind(k string) bool {

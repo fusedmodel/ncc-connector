@@ -38,6 +38,11 @@ func Slugify(s string) string {
 	return out
 }
 
+var reSlugOK = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
+
+// ValidSlug 校验规范 slug（小写字母数字与 - _ .，2..64 位，首字符是字母数字）。
+func ValidSlug(s string) bool { return reSlugOK.MatchString(s) }
+
 // RandHex 返回 n 字节随机数的 hex 串。
 func RandHex(n int) string {
 	buf := make([]byte, n)
@@ -94,6 +99,13 @@ func Open(path string) (*Store, error) {
 		&model.ConfigEntry{}, &model.ConfigRevision{},
 		// 节点治理：机器管理凭据 / 审计 / 制品分享链接
 		&model.AdminKey{}, &model.AuditLog{}, &model.ArtifactShare{},
+		// NCC Trace：运行轨迹（文档不可变）+ 评测标注（只追加）
+		&model.Trace{}, &model.TraceLabel{},
+		// NCC State：知识库 / 记忆 / 检查点（三样状态住节点，包只声明要什么）
+		&model.KbDoc{}, &model.KbRevision{}, &model.MemEntry{}, &model.Checkpoint{},
+		// NCC Store：通用记录仓（集合 = 声明，记录 = 数据）。kb/mem/ckpt/trace 的**机械部分**
+		// 会逐步收敛到这里；新内容类型（issue / log / …）声明一个集合即可，不改服务端。
+		&model.Collection{}, &model.Record{}, &model.RecordRevision{}, &model.RecordIndex{},
 	); err != nil {
 		return nil, fmt.Errorf("迁移表结构失败: %w", err)
 	}

@@ -191,6 +191,11 @@ var DefaultScopes = []string{
 	"registry:read", "registry:download", "registry:publish",
 	"nodes:read", "nodes:write", "grants:read", "grants:write",
 	"config:read", "config:write",
+	"trace:read", "trace:write",
+	// 三样状态：默认给读写（它们是"我的 Agent 的状态"，新建 key 就是我的）
+	"kb:read", "kb:write", "mem:read", "mem:write", "ckpt:read", "ckpt:write",
+	// 通用记录仓：一个作用域对**所有集合**生效（集合级的边界靠命名空间归属与认证，不靠作用域爆炸）
+	"store:read", "store:write",
 	"p2p:read", "p2p:write",
 }
 
@@ -202,11 +207,18 @@ var NodeTicketScopes = []string{
 }
 
 // AllScopes 可用作用域目录。
+//
+// `trace:label` 与 `trace:write` 分开：**采集轨迹**与**给轨迹下判断**是两件事，
+// 前者是 Agent 日常要干的（接入票据里显式加 `--scopes trace:write` 即可），
+// 后者是一次评测动作，不该顺着默认凭据自动拿到。
 var AllScopes = []string{
 	"registry:read", "registry:download", "registry:publish",
 	"nodes:read", "nodes:write",
 	"grants:read", "grants:write",
 	"config:read", "config:write",
+	"trace:read", "trace:write", "trace:label",
+	"kb:read", "kb:write", "mem:read", "mem:write", "ckpt:read", "ckpt:write",
+	"store:read", "store:write",
 	"p2p:read", "p2p:write",
 	"keys:write",
 }
@@ -237,6 +249,16 @@ func scopeImplies(have, want string) bool {
 		return want == "grants:read"
 	case "config:write":
 		return want == "config:read"
+	case "trace:write", "trace:label":
+		return want == "trace:read"
+	case "kb:write":
+		return want == "kb:read"
+	case "mem:write":
+		return want == "mem:read"
+	case "ckpt:write":
+		return want == "ckpt:read"
+	case "store:write":
+		return want == "store:read"
 	}
 	return false
 }

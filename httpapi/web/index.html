@@ -150,6 +150,23 @@ footer{padding:34px 0 48px;color:var(--ink4);font-size:12.5px}
     </div>
   </section>
 
+  <section>
+    <h2>内容（通用记录仓：集合与记录）</h2>
+    <p class="muted">这台节点上有哪些内容：<b>内置集合</b>（kb / mem / ckpt / trace，名字保留）与用户声明的集合。
+      声明一个集合就多一类内容，服务端不用改；字段、能不能改、给谁看都在声明里。
+      <b>控制台不带凭据</b>，所以这里只看得到<b>公开集合</b>与其中的公开记录 —— 私有的用 CLI（<code>ncc store …</code>）。</p>
+    <div id="storeBuiltins" class="note"></div>
+    <div id="storeCols"></div>
+    <div class="row" style="margin-top:10px">
+      <select id="storeCol"><option value="">选一个集合看记录…</option></select>
+      <input id="storeQ" placeholder="关键词（几个词都要出现）" size="22" />
+      <button id="storeSearch">看记录</button>
+      <span id="storeMeta" class="muted mono"></span>
+    </div>
+    <div id="storeRecs"></div>
+    <div id="storeBody"></div>
+  </section>
+
   <section class="two">
     <div>
       <h2>接入：CLI</h2>
@@ -380,6 +397,70 @@ async function loadDirectory() {
   $('dirBox').innerHTML = table(['引用', '类型', '说明', '来源', '大小', '下载'], rows);
 }
 
+async function loadStore() {
+  const d = await jget('/api/store');
+  // 内置目录：四类内置内容在没人用过之前是"还没有行"的 —— 不列出来就变成一张骗人的清单
+  const bins = (d.builtins || []).map((b) =>
+    `<span class="badge${b.present ? ' ok' : ''}" title="${esc(b.summary)}">${esc(b.kind)}${b.present ? '' : ' · 未用过'}</span>`);
+  $('storeBuiltins').innerHTML = `节点自带的内容种类（名字保留）：${bins.join(' ')}
+    <div class="muted" style="margin-top:6px">取用即声明：用过一次之后它会作为集合出现在下面这张表里。</div>`;
+  const rows = (d.collections || []).map((c) => `<tr>
+    <td class="mono">${esc(c.namespace && c.namespace.slug ? '@' + c.namespace.slug : '')}/${esc(c.kind)}${c.builtin ? '<span class="badge dark">内置</span>' : ''}
+      <div class="muted">${esc(c.summary || '')}</div></td>
+    <td class="mono">${c.records || 0}</td>
+    <td>${c.mutable ? '可变' : '不可变'}${c.appendOnly ? ' · 只追加' : ''}</td>
+    <td>${esc(c.visibility)}</td>
+    <td class="mono">${(c.fields || []).map((f) => esc(f.name)).join(', ') || '—'}</td>
+    <td class="mono">${(c.index || []).join(', ') || '—'}</td>
+  </tr>`);
+  $('storeCols').innerHTML = table(['集合', '记录', '形态', '可见性', '字段', '可过滤'], rows);
+  // 下拉框：**要带上命名空间** —— 匿名读记录必须指明 `?namespace=@某人`
+  //（服务端会拒「匿名读不知道读谁的」）。
+  const sel = $('storeCol');
+  const keep = sel.value;
+  const cols = (d.collections || []).filter((c) => c.visibility === 'public');
+  sel.innerHTML = '<option value="">选一个集合看记录…</option>' +
+    cols.map((c) => `<option value="${esc(c.kind)}" data-ns="${esc((c.namespace && c.namespace.slug) || '')}">@${esc((c.namespace && c.namespace.slug) || '?')}/${esc(c.kind)}（${c.records} 条）</option>`).join('');
+  if (cols.some((c) => c.kind === keep)) sel.value = keep;
+  if (!cols.length) {
+    $('storeMeta').textContent = '这个节点上还没有公开集合（私有的控制台看不到）';
+  }
+}
+
+function storeNsQS() {
+  const sel = $('storeCol');
+  const opt = sel.selectedOptions && sel.selectedOptions[0];
+  const ns = opt ? (opt.getAttribute('data-ns') || '') : '';
+  return ns ? '&namespace=@' + encodeURIComponent(ns) : '';
+}
+
+async function loadStoreRecords() {
+  const col = $('storeCol').value;
+  $('storeBody').innerHTML = '';
+  if (!col) { $('storeMeta').textContent = ''; $('storeRecs').innerHTML = ''; return; }
+  const q = $('storeQ').value.trim();
+  const d = await jget(`/api/store/${encodeURIComponent(col)}?size=20` + storeNsQS() + (q ? `&q=${encodeURIComponent(q)}` : ''));
+  $('storeMeta').textContent = `${d.total} 条${q ? ' · 关键词匹配（不是索引检索）' : ''}`;
+  const rows = (d.records || []).map((r) => `<tr data-key="${esc(r.key)}" class="pick" style="cursor:pointer">
+    <td class="mono">${esc(r.key)}</td>
+    <td class="mono">v${r.revision}</td>
+    <td class="mono">${sizeTxt(r.size)}</td>
+    <td class="mono">${esc(Object.entries(r.fields || {}).map(([k, v]) => k + '=' + (Array.isArray(v) ? v.join('/') : v)).join(' · '))}</td>
+    <td>${esc(timeTxt(r.updatedAt))}</td>
+  </tr>`);
+  $('storeRecs').innerHTML = table(['key', '版本', '大小', '字段', '更新于'], rows);
+}
+
+async function loadStoreRecordBody(key) {
+  const col = $('storeCol').value;
+  if (!col || !key) return;
+  const d = await jget(`/api/store/${encodeURIComponent(col)}/${encodeURIComponent(key)}?x=1` + storeNsQS());
+  const r = d.record || {};
+  $('storeBody').innerHTML = `<h2 style="margin-top:14px">${esc(col)}/${esc(r.key || key)}（v${r.revision}）</h2>
+    <div class="muted mono">${esc(r.checksum || '')} · ${sizeTxt(r.size)}${r.expired ? ' · ⚠️ 已过期' : ''}</div>
+    <pre>${esc(r.body || '')}</pre>`;
+}
+
 async function loadConfigKinds() {
   try {
     const d = await jget('/api/configs/kinds');
@@ -435,7 +516,7 @@ async function loadNodes() {
 }
 
 async function refresh() {
-  const tasks = [loadSelf(), loadCluster(), loadDirectory(), loadConfigs(), loadNodes(), loadAdmin().catch(() => {})];
+  const tasks = [loadSelf(), loadCluster(), loadDirectory(), loadConfigs(), loadStore(), loadNodes(), loadAdmin().catch(() => {})];
   const results = await Promise.allSettled(tasks);
   const failed = results.filter((r) => r.status === 'rejected');
   if (failed.length && failed.length === results.length) {
@@ -704,6 +785,14 @@ $('search').addEventListener('click', () => loadDirectory().catch(() => {}));
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadDirectory().catch(() => {}); });
 $('kind').addEventListener('change', () => loadDirectory().catch(() => {}));
 $('cfgSearch').addEventListener('click', () => loadConfigs().catch(() => {}));
+$('storeSearch').addEventListener('click', () => loadStoreRecords().catch(() => {}));
+$('storeCol').addEventListener('change', () => loadStoreRecords().catch(() => {}));
+$('storeQ').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadStoreRecords().catch(() => {}); });
+// 点一行看正文（记录列表只给关键列，正文要按 key 取 —— 与 API 同一取舍）
+$('storeRecs').addEventListener('click', (ev) => {
+  const tr = ev.target && ev.target.closest ? ev.target.closest('tr.pick') : null;
+  if (tr) loadStoreRecordBody(tr.getAttribute('data-key')).catch(() => {});
+});
 $('cfgKind').addEventListener('change', () => loadConfigs().catch(() => {}));
 $('cfgEnv').addEventListener('change', () => loadConfigs().catch(() => {}));
 

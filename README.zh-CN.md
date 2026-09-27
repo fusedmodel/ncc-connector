@@ -32,6 +32,8 @@ NCCR_PORT=8282 ./dist/ncc-registry          # → http://localhost:8282
 | **节点管理（admin）** | 节点管理员管**用户 / 节点 / 服务**（禁用启停、重置密码、摘除、归档），每个动作都进审计 | `/api/admin/*` |
 | **多节点（master/worker）** | worker 注册 + 心跳上报本地目录；master 聚合目录、做能力路由、代理字节，还能把制品**分发**到 worker 并在下架时**回收** | `/api/cluster*` |
 | **打洞条件（P2P）** | 在**这台机器**上判断跨网可不可达：NAT 画像 + 与对端映射真实对打（0 字节）；可选开一个**只应答 STUN** 的可被打洞入口 | `/api/p2p/self`、`/api/p2p/check`、`/api/p2p/serve` |
+| **运行轨迹（Trace）** | 采集**真跑过什么**（Agent 会话 / HUR 执行），用于**能力评估**（按制品版本看成功率、耗时、token、花费、人工结论）与**后训练数据集**导出（JSONL + 奖励/得分/切分）。默认私有、显式采集、默认只有摘要 | `/api/traces*` |
+| **状态（kb / mem / ckpt）** | 托管 **Agent 自己的三样状态**：知识库（语料，可检索、改一次留一版）、记忆（键值 + TTL + 来源）、检查点（不可变快照 + 血缘）。**默认私有**（记忆没有公开档）；包用 `hur.json` 的 `state{}`（规则 R11）声明要哪些，字节住在本节点 | `/api/kb*` `/api/mem*` `/api/ckpt*` |
 
 ## 架构
 
@@ -415,7 +417,7 @@ ncc registry rm @alice/x --yes                                         # 下架 
 
 | 方法/路径 | 说明 |
 |---|---|
-| `GET /api/health` · `GET /api/meta` | 存活与本节点自述（角色 / 节点 id / 规模 / 控制台地址） || `GET /api/meta` 的 `kind` 与 `capabilities` | **节点声明自己的能力**（`node`；`registry` / `config` / `share` / `nodes` / `grants` / `access` / `cluster` / `admin` / `p2p`）。CLI / MCP 按这份清单放行命令 —— 声明了 `services` / `profile` 那天，同名命令在本节点上就直接可用 || `GET /api/registry/kinds` | 制品类型与数量 |
+| `GET /api/health` · `GET /api/meta` | 存活与本节点自述（角色 / 节点 id / 规模 / 控制台地址） || `GET /api/meta` 的 `kind` 与 `capabilities` | **节点声明自己的能力**（`node`；`registry` / `config` / `share` / `nodes` / `grants` / `access` / `cluster` / `admin` / `p2p` / `trace` / `kb` / `mem` / `ckpt`）。CLI / MCP 按这份清单放行命令 —— 声明了 `services` / `profile` 那天，同名命令在本节点上就直接可用 || `GET /api/registry/kinds` | 制品类型与数量 |
 | `GET /api/registry?q=&kind=&tag=&namespace=&page=&size=` | 目录检索（本节点权威） |
 | `GET /api/registry/<@ns/slug\|A-…>` | 制品详情 |
 | `GET /api/registry/<ref>/download` | 下载元数据（`url` / `sha256` / `size` / `via`） |
@@ -434,6 +436,13 @@ ncc registry rm @alice/x --yes                                         # 下架 
 | `GET /j/:key` | 接入短链落地页（secret 在 fragment，服务端看不到） |
 | `GET /api/cluster` · `GET /api/cluster/workers` | 集群总览（master + 各 worker） |
 | `GET /api/cluster/directory?q=&kind=&tag=` | 聚合目录（本地 + 远端，条目带 `via`；本地条目带 `replicas`） |
+| `GET /api/traces/kinds` | 轨迹词表与上限（类型 / 状态 / 内容级别 / 步骤类型 / 标注键 / 结论 / 切分） |
+| `GET /api/kb/kinds` | 知识库类型 / 格式 / 状态与上限（并**明说检索是关键词加权**） |
+| `GET /api/kb?namespace=&kind=&tag=&q=&archived=&page=&size=` | 知识库目录。匿名只看公开；带凭据看「公开 ∪ 我的命名空间 ∪ 被授权的」（管理员 `all=1` 看全节点） |
+| `GET /api/kb/<@ns/slug\|KD-…>?revision=N` | 一篇文档（含正文，`checksum` = 正文的 `sha256`）；`revision=N` 取历史版本 |
+| `GET /api/kb/<ref>/revisions` | 版本历史（谁在什么时候改了什么，不含正文） |
+| `GET /api/kb/bundle?namespace=&kind=&tag=` | 成组拉取（每篇带 `content` + `checksum`），给 Agent 落地用 |
+| `GET /api/mem/kinds` · `GET /api/ckpt/kinds` | 记忆种类与上限 / 检查点粒度与上限 |
 
 需登录（`Authorization: Bearer <JWT 或 ncc_ API-Key>`）：
 
@@ -459,6 +468,16 @@ ncc registry rm @alice/x --yes                                         # 下架 
 | `POST /api/configs` · `PATCH/DELETE /api/configs/<ref>` | 创建 / 改内容（加版本）/ 删除配置（需 `config:write` + 成员身份） |
 | `POST /api/configs/<ref>/rollback` | 回滚到某一版（作为新版本写回，历史不改写） |
 | `GET /api/configs/bundle?namespace=&env=&kind=&tag=&secrets=1&reveal=1` | 成组拉取（`env` 命中 `prod` 与 `any`；默认跳过 `secret`） |
+| `POST /api/traces` · `GET /api/traces[?…]` · `GET /api/traces/:id` | 上传轨迹（按 `(命名空间, traceId)` 幂等）/ 列出 / 看一条（默认范围：我的 + 被授权的） |
+| `POST /api/traces/:id/labels` · `GET /api/traces/stats` · `GET /api/traces/export` | 追加评测标注（只追加，绝不改写原轨迹）/ 聚合结论 / 导出数据集（JSONL + 数据集摘要） |
+| `POST /api/kb` · `PATCH\|DELETE /api/kb/<ref>` | 写一篇（存在即新版本）/ 改名 / 归档 / 恢复 / 删除（需 `kb:write` **且**是命名空间成员） |
+| `GET /api/mem/lookup?namespace=&subject=&key=` | 按 key 精确读一条记忆（Agent 读记忆的主路径） |
+| `GET /api/mem?namespace=&subject=&prefix=&kind=&tag=&source=&pinned=&expired=&limit=` | 列出记忆（过期的默认不算，`expired=1` 才给；**记忆没有公开档**） |
+| `PUT /api/mem` · `DELETE /api/mem/:id` · `POST /api/mem/gc` | 写一条（`(命名空间, subject, key)` upsert，Revision+1；`ttl_days>0` 设过期、`0` 清空）/ 删一条 / 真正清掉已过期的 |
+| `POST /api/ckpt` · `PUT /api/ckpt/:id/blob` | 建检查点（`digest`+`size` 一起给，或两个都空 = 先建元数据）/ 传字节（服务端**重算 sha256 并拒收不符**；已有字节不能再传） |
+| `GET /api/ckpt[?ref=&label=&tag=&q=&status=&limit=]` · `GET /api/ckpt/:id` | 列出 / 看一个（响应带**短时签名** `bytesUrl`） |
+| `GET /api/ckpt/:id/bytes` · `GET /api/ckpt/:id/lineage` · `DELETE /api/ckpt/:id` | 字节流（签名地址或可读凭据）/ 沿 `parent` 回溯血缘 / 删除（元数据 + 字节） |
+| `POST /api/ckpt/prune?ref=&keep=N` | 每个 subject 只留最新 N 个：其余标 `pruned`、删字节、**元数据留下**（历史不留无法解释的空洞） |
 | `POST /api/shares` · `GET /api/shares[?mine=1\|all=1]` · `DELETE /api/shares/:id` | 建 / 列 / 撤销分享链接（`all=1` 需管理员；只能撤自己的，管理员可撤任意） |
 
 打洞条件（P2P；判断面，**不搬运业务字节**，需登录）：
@@ -485,10 +504,74 @@ ncc registry rm @alice/x --yes                                         # 下架 
 | `GET /api/admin/audit?action=&limit=&offset=` | 审计日志 |
 | `GET /api/admin/keys` · `POST /api/admin/keys/rotate?label=` | 机器凭据列表 / 轮换（新 secret 只返回一次，旧的立即失效） |
 
-作用域：`registry:read|download|publish`、`nodes:read|write`、`keys:write`（写蕴含读）。
+作用域：`registry:read|download|publish`、`nodes:read|write`、`config:read|write`、`trace:read|write|label`、
+`kb:read|write`、`mem:read|write`、`ckpt:read|write`、`p2p:read|write`、`keys:write`（写蕴含读）。
 
 错误体统一 `{"error":{"code":"…","message":"…"}}`，HTTP 状态码同步语义
 （400 参数 / 401 未认证 / 403 无权限 / 404 不存在 / 409 冲突 / 413 过大 / 502 节点不可达）。
+
+## 托管状态：知识库 / 记忆 / 检查点
+
+三样属于 **Agent 自己**（不是属于某个包）的东西：它该照着读的语料、它该记住的小结论、它能交接或回滚的快照。
+
+```bash
+# 知识库 —— 内容进库、可检索、改一次留一版
+ncc kb set refund --title "退款流程" --summary "标准步骤" --tag support \
+    --content "1. 核对订单号  2. 确认到账方式"
+ncc kb ls --namespace @team          # 或：ncc kb search 退款
+ncc kb get @alice/refund             # 加 --revision 1 取历史版本
+ncc kb archive @alice/refund         # 归档的默认不出现在列表与检索里
+
+# 记忆 —— 键值，同键即更新，过期在**读时**生效
+ncc mem set timezone "Asia/Shanghai" --source manual
+ncc mem get timezone                 # Agent 读记忆的主路径
+ncc mem set timezone "UTC+8"         # 同一个键 = 更新（Revision+1）
+ncc mem set scratch "临时结论" --ttl-days 1
+ncc mem gc                           # 真正删掉已过期的
+
+# 检查点 —— 不可变快照 + 血缘
+ncc ckpt save --name snap-1200 --ref @alice/agent --label run --file ./state.tar
+ncc ckpt save --name snap-1400 --ref @alice/agent --file ./state2.tar --parent-last
+ncc ckpt lineage <id>                # 一路回溯到起点
+ncc ckpt pull <id> --out ./restore.tar   # **落盘前核对摘要**
+ncc ckpt prune --ref @alice/agent --keep 5
+```
+
+**为什么这三样不是 HUR 包**（第一个会被问到的问题）：包是**能力** —— 代码 + 清单，内容寻址、有签名、
+"装上就能跑"；状态是**数据** —— 会被改写、会长大、默认私有、生命周期跟着 Agent 走。
+把知识库打进包会立刻自相矛盾：包的全部意义就是字节**不该变**（digest 证明"没被改"），
+而知识库天经地义要变。包能做的是**声明**自己需要什么，于是"这个 Agent 需要哪些库、哪些记忆、
+哪些检查点"本身也变成可签名、可分发的：
+
+```jsonc
+// hur.json（harness-use 包清单）—— 规则 R11
+"state": {
+  "kb":          [{ "ref": "@team/manual", "mode": "read" }],   // read | write | readwrite，或 "*"
+  "memory":      { "subject": "self", "kinds": ["fact"], "ttl_days": 30 },
+  "checkpoints": { "enabled": true, "label": "run", "keep_local": 2 }
+}
+```
+
+`ncc kb pull --package ./agent` 就是两者的接缝：读声明、按 `checksum` 增量把那几个库拉到
+`~/.ncc/kb`；包没声明就**明确拒绝**，不替它猜。（别与 `permissions.local.kb` 混：那个是**包内只读的本地文件**，
+`state.kb` 是**节点上托管、会被改写、要授权**的库。）
+
+**可见性**（与轨迹同一套，只差一处）：
+
+| | 知识库 | 记忆 | 检查点 |
+|---|---|---|---|
+| 默认 | 私有 | **私有，且没有公开档** | 私有 |
+| 公开档 | 有（`--public`，匿名可读） | 设计上就没有 | 有 |
+| 谁能读 | 公开 ∪ 我的命名空间 ∪ 拿到 `state` 授权的 | 成员 ∪ 拿到 `state` 授权的 | 公开 ∪ 成员 ∪ 授权 |
+| 谁能写 | 只有命名空间成员 | 只有命名空间成员 | 只有命名空间成员 |
+| 管理员 | 要 `all=1` | 要 `all=1` | 要 `all=1` |
+
+授权只开一个种类（`state`）覆盖三样：语义上它们是"我的 Agent 的状态"，先给一个粒度，
+真要"只放知识库不放记忆"再拆。
+
+**诚实边界**（详见 `ncc-platform/prd/ncc-state.md`）：检索是**关键词加权**（标题 3 / 摘要 2 / 正文 1），
+**不是向量检索**；**不跨节点 fan-out**（状态住在你写进去的那台节点）；同步只有拉（按 checksum 增量）；
+记忆是同键覆盖（后写胜）；检查点字节按原样存（不加密）—— 敏感内容别放进来。
 
 ## Web 控制台
 
@@ -585,6 +668,11 @@ func main() {
 > 否则后台循环会一直漏。
 
 ## 冒烟测试
+
+除了上面的集群冒烟（`scripts/smoke.sh`），`scripts/state-smoke.sh` 端到端跑**状态**这一整条链
+（知识库 / 记忆 / 检查点）：构建本仓库、用独立端口与数据目录起一个节点、注册两个账号，
+然后同时打 HTTP 与 `ncc` CLI —— 覆盖检查点取回时的摘要核对、字节不符被拒、TTL 读时过期、
+按包声明拉取知识库、跨账号 403、"被授权者只有读"、以及**不碰真实 `~/.ncc`** 的隔离自检（80 项）。
 
 ```bash
 bash scripts/smoke.sh      # 自带启停：master + worker 两节点，端口 18282/18283

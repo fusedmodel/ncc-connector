@@ -16,6 +16,72 @@
 
 ## [未发布]
 
+### 新增 · 托管状态：知识库 / 记忆 / 检查点
+
+三样属于 **Agent**（而不是属于某个包）的东西。**有意不做成制品类型** —— 包是**能力**
+（内容寻址、有签名、"装上就能跑"），状态是**数据**：会被改写、会长大、默认私有、有独立生命周期。
+包只**声明**自己要什么（`state{}`，harness-use 规则 R11），字节住在本节点。
+
+- **`kb` 知识库**（`model.KbDoc` + `KbRevision`）：命名空间下的文档（`@ns/slug`），带 type / format /
+  summary / tags / `source`（这篇知识从哪来），**每次写入追加一版**（历史永不改写）；
+  `checksum` 是正文的 `sha256`。检索是**关键词加权**（标题 3 / 摘要 2 / 正文 1）—— 接口里明写，
+  因为管它叫"检索"却不说清是哪种，就是在误导。单篇上限 1 MB（知识库是**语料**，不是文件堆；
+  大文件该走制品）。
+- **`mem` 记忆**（`model.MemEntry`）：键值 + `subject`（谁的记忆：`self`、某条流水线…）+ `kind` +
+  `tags` + `source`（trace id / 检查点引用 / 人手写）+ `confidence`（千分位，避免浮点）+ `pinned` +
+  `revision` + `expiresAt`。唯一性在 `(命名空间, subject, key)`：同键再写就是**更新**（Revision+1）。
+  TTL **读时判定**（过期即视为不存在），`gc` 才真正删掉。**记忆设计上就没有公开档** ——
+  公开"记忆"本身不合语义，所以是"没有这一档"，不是"还没做"。单值上限 64 KB。
+- **`ckpt` 检查点**（`model.Checkpoint`）：不可变快照 —— 字节进 blob、元数据进库 —— 带 `label`
+  （episode / step / run / release / handoff / manual）、`step`、`subjectRef` + `subjectVersion`
+  （对齐哪个制品版本）、`parent`（血缘，回溯带环保护）与自由 `meta`。创建时可以声明 `digest` + `size`，
+  也可以两个都留空稍后传字节；**服务端上传时重算 `sha256` 并拒收不符**，已有字节的点不能再传。
+  `prune` 每个 subject 只留最新 N 个：其余标 `pruned` 并只删字节 —— 元数据留下，历史不留无法解释的空洞。
+- **可见性**：默认私有；`kb` 与 `ckpt` 有显式公开档，`mem` 没有；匿名只看公开文档，带凭据看
+  「公开 ∪ 我的 ∪ 被授权的」，`all=1`（仅管理员）才扩到全节点。写永远要命名空间成员身份 ——
+  被授权者只有读。store 层 **fail-closed**（没有可见范围就 `WHERE 1 = 0`），handler 再按行复核（纵深防御）。
+- **新增授权种类 `state`** 覆盖这三样（有意只给一个粒度：语义上它们就是"我的 Agent 的状态"，
+  真要"只放知识库不放记忆"再拆）。
+- **新增能力 `kb` / `mem` / `ckpt`**，新增作用域 `kb:read|write`、`mem:read|write`、`ckpt:read|write`；
+  `/api/meta` 报 `kbDocs` / `memEntries` / `checkpoints`。
+- **新增接口**：`/api/kb`（`kinds`、`bundle`、列表、`POST`、`GET|PATCH|DELETE <ref>`、`<ref>/revisions`）、
+  `/api/mem`（`kinds`、`lookup`、列表、`PUT`、`DELETE :id`、`gc`）、
+  `/api/ckpt`（`kinds`、列表、`POST`、`PUT :id/blob`、`GET :id`、`:id/bytes`、`:id/lineage`、
+  `:id/prune`、`DELETE :id`）。检查点字节走**短时签名地址**（域前缀 `ckpt:`，让一种资源的签名
+  永远顶替不了另一种）**或**能读这条的凭据。
+- **`scripts/state-smoke.sh`** 用独立节点 + 独立 `NCC_HOME` 端到端跑通（80 项断言）：取回时核对摘要、
+  字节不符被拒、已有字节不能覆写、TTL 读时过期、按包声明拉取知识库、跨账号 403、
+  "被授权者只有读"，以及**不碰真实 `~/.ncc`** 的自检。
+
+### 新增 · 运行轨迹（Trace）：能力评估与后训练数据集
+
+轨迹 = **真跑过什么**（Agent 会话 / HUR 执行）。同一份数据回答两件事：**这个版本好不好**
+（成功率 / 耗时 / token / 花费 / 人工结论）与**能不能拿来训练**（JSONL 导出，带结论、奖励、切分）。
+
+- **新文档规范 `ncc-trace/v1`**（`model/trace.go`）：`kind`（`agent` / `hur-run`）、
+  `subject`（`ref` + `version` —— “改版之后变好没有”的分组键）、`steps`、`model`/`usage`、
+  `labels`、`tags`、`payload`、`redaction`、`digest`。
+- **`payload` 由采集方声明**：`digest`（默认，只有哈希与结构）/ `preview`（截断预览）/ `full`（原文）。
+  服务端**只如实记录**，不补全也不降级；校验会拦“标成 digest 却带原文”的自相矛盾。
+- **默认私有，没有“公开轨迹”这一档**：可见 = 我的命名空间 ∪ 被我授权 `trace` 的人；
+  `mine=1` 收窄；管理员也要 `all=1` 才看全节点。
+- **文档不可变 + 标注只追加**：采集方算 `digest`，服务端重算核对，不一致直接拒；
+  评测标注进单独的 `trace_labels` 表 —— 打分永远不改写被判断的事实。
+- **摘要跨语言一致**（`model.TraceDigestCore`）：用长度前缀拼接而不是 JSON 序列化
+  （浮点、HTML 转义、键序在 Go 与 Rust 之间不保证一致），两端与 CLI 测试钉同一个 `sha256:` 向量。
+- **新接口**：`GET /api/traces/kinds`、`POST /api/traces`（按 `(命名空间, traceId)` 幂等：
+  同 id 同摘要 → `duplicates`；同 id 不同摘要 → `trace_conflict`）、`GET /api/traces`、
+  `GET /api/traces/:id`、`POST|GET /api/traces/:id/labels`、`GET /api/traces/stats`
+  （成功率 / 耗时分位 / token 与花费 / 按版本分组 / 标注覆盖率 / 结论分布 / 失败归类）、
+  `GET /api/traces/export`（JSONL + 数据集摘要，被 `limit` 截断时回 `X-NCC-Truncated`）、
+  `DELETE /api/traces/:id`。
+- **新作用域** `trace:read` / `trace:write` / `trace:label`（`label` 刻意分开：采集是 Agent 日常，
+  打分是一次评测动作）；**新授权种类** `trace`；`/api/meta` 新增 **`trace` 能力声明**，
+  能力词表新增 `trace`（“这台节点收运行轨迹”，别名 `traces` / `telemetry`）。
+- **上限**：单条 2 MB、2000 步、单批 500 条、单次导出 20000 条；被截断时如实上报，不静默少给。
+- 测试：`model/trace_test.go`（摘要向量、校验、聚合）与 `store/trace_test.go`
+  （幂等、冲突、fail-closed 可见性、过滤、导出截断、标注投影）。
+
 ### 变更 · `hur` 的 kind 标签对齐写死的 HUR 定义
 
 `HUR` = **Harness-Use Runtime** —— 那是**运行时**（定义：支撑 harness 完成 LLM 调用、工具编排、

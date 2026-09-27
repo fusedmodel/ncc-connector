@@ -155,6 +155,98 @@ func NewServer(cfg *config.Config, st *store.Store, blob storage.Storage) (*Serv
 	cfgAPI.GET("/:id", s.getConfig)
 
 	// 接入票据：把「一个内网 registry」加进 Agent —— key/secret 或接入短链。
+	// NCC Trace：运行轨迹（能力评估 + 后训练数据集）。
+	// 轨迹**没有「公开」档**：读/写/标注三件事分别要 trace:read / trace:write / trace:label。
+	tr := api.Group("/traces")
+	tr.GET("/kinds", s.traceKinds)
+	tr.GET("/stats", requireScope("trace:read"), s.traceStats)
+	tr.GET("/export", requireScope("trace:read"), s.exportTraces)
+	tr.GET("", requireScope("trace:read"), s.listTraces)
+	tr.GET("/", requireScope("trace:read"), s.listTraces)
+	tr.POST("", requireScope("trace:write"), s.ingestTraces)
+	tr.POST("/", requireScope("trace:write"), s.ingestTraces)
+	tr.GET("/:id/labels", requireScope("trace:read"), s.listTraceLabels)
+	tr.POST("/:id/labels", requireScope("trace:label"), s.addTraceLabel)
+	tr.DELETE("/:id", requireScope("trace:write"), s.deleteTrace)
+	tr.GET("/:id", requireScope("trace:read"), s.getTrace)
+
+	// NCC State：知识库（kb）/ 记忆（mem）/ 检查点（ckpt）。
+	//
+	// 这三样**是状态，不是制品**：制品是被安装、被运行的代码 + 清单（有签名、可分发），
+	// 状态是被改写、会长大的数据（默认私有、生命周期跟着 Agent 走）。
+	// 包只能在 hur.json 里**声明**自己要哪些（规则 R11），实际字节住在这台节点的库里。
+	//
+	// 读接口与配置同一取舍：kb 有公开档（匿名可读公开文档），非公开的与 mem/ckpt
+	// 全部在 handler 里判可见范围（默认私有 + state 授权）。
+	kbAPI := api.Group("/kb")
+	kbAPI.GET("/kinds", s.kbKinds)
+	kbAPI.GET("/bundle", s.kbBundle)
+	kbAPI.GET("", s.listKb)
+	kbAPI.GET("/", s.listKb)
+	kbAPI.POST("", requireScope("kb:write"), s.upsertKb)
+	kbAPI.POST("/", requireScope("kb:write"), s.upsertKb)
+	// 引用两种形态：K-…（单段）与 @ns/slug（两段），与制品/配置同一套写法。
+	kbAPI.GET("/:id/revisions", s.kbRevisions)
+	kbAPI.GET("/:id/:slug/revisions", s.kbRevisions)
+	kbAPI.PATCH("/:id", requireScope("kb:write"), s.patchKb)
+	kbAPI.PATCH("/:id/:slug", requireScope("kb:write"), s.patchKb)
+	kbAPI.DELETE("/:id", requireScope("kb:write"), s.deleteKb)
+	kbAPI.DELETE("/:id/:slug", requireScope("kb:write"), s.deleteKb)
+	kbAPI.GET("/:id/:slug", s.getKb)
+	kbAPI.GET("/:id", s.getKb)
+
+	// 记忆：**没有公开档**（记忆是私人/团队状态，公开"记忆"这件事本身就不合语义）。
+	memAPI := api.Group("/mem")
+	memAPI.GET("/kinds", s.memKinds)
+	memAPI.GET("/lookup", requireScope("mem:read"), s.lookupMem)
+	memAPI.GET("", requireScope("mem:read"), s.listMem)
+	memAPI.GET("/", requireScope("mem:read"), s.listMem)
+	memAPI.PUT("", requireScope("mem:write"), s.putMem)
+	memAPI.PUT("/", requireScope("mem:write"), s.putMem)
+	memAPI.POST("/gc", requireScope("mem:write"), s.gcMem)
+	memAPI.DELETE("/:id", requireScope("mem:write"), s.deleteMem)
+	memAPI.GET("/:id", requireScope("mem:read"), s.getMem)
+
+	// 检查点：不可变快照（元数据先建、字节后传），血缘可回溯。
+	// 字节接口不挂作用域中间件：它要同时接受签名地址（服务端签发，对方不用带凭据）
+	// 与可读凭据，两者在 handler 里判一次。
+	ckAPI := api.Group("/ckpt")
+	ckAPI.GET("/kinds", s.ckptKinds)
+	ckAPI.GET("", requireScope("ckpt:read"), s.listCkpt)
+	ckAPI.GET("/", requireScope("ckpt:read"), s.listCkpt)
+	ckAPI.POST("", requireScope("ckpt:write"), s.createCkpt)
+	ckAPI.POST("/", requireScope("ckpt:write"), s.createCkpt)
+	ckAPI.POST("/prune", requireScope("ckpt:write"), s.pruneCkpt)
+	ckAPI.PUT("/:id/blob", requireScope("ckpt:write"), s.putCkptBlob)
+	ckAPI.GET("/:id/lineage", requireScope("ckpt:read"), s.ckptLineage)
+	ckAPI.GET("/:id/bytes", s.ckptBytes)
+	ckAPI.DELETE("/:id", requireScope("ckpt:write"), s.deleteCkpt)
+	ckAPI.GET("/:id", requireScope("ckpt:read"), s.getCkpt)
+
+	// NCC Store：通用记录仓 —— **集合是声明，记录是数据，服务端不认识业务字段**。
+	//
+	// 为什么单独一层：kb/mem/ckpt/trace 是四类内容，机械部分却是同一件事（归属命名空间、
+	// 按 key 取、分页、标签、可见性、版本、上限、过期、软删）。各写一遍就是抄四遍。
+	// 新增一类内容（issue / log / note）在这里**声明一个集合**即可，不改服务端。
+	//
+	// 路径约定：集合名走路径，命名空间走 `?namespace=`（集合属于命名空间，所以跨空间读必须显式指明）。
+	// 读写作用域是 `store:read|write`（对**所有**集合生效）—— 集合级边界靠命名空间归属与认证，
+	// 不靠"一集合一作用域"那种会爆炸的命名法。
+	storeAPI := api.Group("/store")
+	storeAPI.GET("/kinds", s.storeKinds)
+	storeAPI.GET("", s.listStoreCollections)
+	storeAPI.GET("/", s.listStoreCollections)
+	storeAPI.POST("", requireScope("store:write"), s.declareStoreCollection)
+	storeAPI.POST("/", requireScope("store:write"), s.declareStoreCollection)
+	storeAPI.POST("/gc", requireScope("store:write"), s.gcStoreRecords)
+	storeAPI.DELETE("/:col", requireScope("store:write"), s.archiveStoreCollection)
+	storeAPI.GET("/:col", s.listStoreRecords)
+	storeAPI.POST("/:col", requireScope("store:write"), s.upsertStoreRecord)
+	storeAPI.GET("/:col/:key/history", s.storeRecordHistory)
+	storeAPI.PUT("/:col/:key", requireScope("store:write"), s.putStoreRecord)
+	storeAPI.DELETE("/:col/:key", requireScope("store:write"), s.deleteStoreRecord)
+	storeAPI.GET("/:col/:key", s.getStoreRecord)
+
 	acc := api.Group("/access")
 	acc.POST("/redeem", s.redeem)
 	acc.GET("/tickets", requireAuth(), s.listTickets)
@@ -292,6 +384,11 @@ func (s *Server) meta(c *gin.Context) {
 	admins, _ := s.St.CountAdmins()
 	nodeKinds, _ := s.St.NodeKindCounts()
 	services, _ := s.St.CountServiceArtifacts("", "")
+	traces, _ := s.St.CountTraces()
+	// 三样状态：既是「这台节点托管了多少 Agent 状态」，也是容量规划的依据。
+	kbDocs, memEntries, ckpts, _ := s.St.StateCounts()
+	// 通用记录仓：集合数 + 记录数（新增一类内容不改服务端，但容量规划得看得见）
+	collections, records, _ := s.St.StoreCounts()
 	hasAdminKey, _ := s.St.HasActiveAdminKey()
 	out := gin.H{
 		"product": "ncc-registry",
@@ -301,7 +398,11 @@ func (s *Server) meta(c *gin.Context) {
 		// capabilities 是**声明**（命令面按它放行），features 是给人读的一句话。
 		// 本地节点将来声明 services / profile 时，CLI 的同名命令会直接生效，不用改客户端。
 		"capabilities": []string{
-			"registry", "config", "share", "nodes", "grants", "access", "cluster", "admin", "p2p",
+			"registry", "config", "share", "nodes", "grants", "access", "cluster", "admin", "p2p", "trace",
+			"kb", "mem", "ckpt",
+			// 通用记录仓：集合是声明、记录是数据。**一个能力对全部集合生效** ——
+			// 能力回答"这台节点支不支持这类功能"，不是"有哪些集合"（那会爆炸）。
+			"store",
 		},
 		"counts": gin.H{
 			"artifacts": artifacts, "hostedNodes": nodes, "users": users,
@@ -309,6 +410,12 @@ func (s *Server) meta(c *gin.Context) {
 			// 治理面：管理员数、服务数（节点侧 kind=service + 制品侧 kind=api）、有效分享数。
 			"admins": admins, "services": services,
 			"serviceNodes": nodeKinds[model.NodeService], "shares": shares,
+			// 轨迹：既是「这台节点收了多少行为数据」，也是评测数据集的体量。
+			"traces": traces,
+			// 状态：知识库文档数 / 记忆条目数 / 检查点数（fsck 与容量规划都看这三个）。
+			"kbDocs": kbDocs, "memEntries": memEntries, "checkpoints": ckpts,
+			// 通用记录仓：集合数与记录数（"又往仓里加了什么"要看得见）
+			"collections": collections, "records": records,
 		},
 		// 存储目录：部署时最常被问的就是「字节到底落在哪」，直接报出来。
 		"storage": gin.H{
@@ -328,6 +435,10 @@ func (s *Server) meta(c *gin.Context) {
 			"access: join by key/secret or one-click intranet link",
 			"cluster: master/worker multi-node, routing, replicate & revoke",
 			"p2p: NAT profile + real hole-punch check between nodes (no business bytes relayed)",
+			"trace: run traces of agents / HUR packages (capability evaluation + post-training datasets; private, opt-in, digest-first)",
+			"kb: hosted knowledge bases (namespace-scoped corpora with revision history, pullable by agents)",
+			"mem: hosted agent memory (key/value, TTL, source-traceable; no public tier by design)",
+			"ckpt: hosted checkpoints (immutable bytes + lineage, signed short-lived download URLs)",
 		},
 		"console": s.Cfg.PublicURL + "/",
 		"auth": gin.H{
@@ -365,7 +476,7 @@ func corsMiddleware(origins string) gin.HandlerFunc {
 			c.Header("Vary", "Origin")
 		}
 		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Filename, X-NCC-Cluster-Token")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)
 			return

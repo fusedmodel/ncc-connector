@@ -96,22 +96,54 @@ var NodeOffers = []NodeOffer{
 		Desc:   "托管点到点分享页的字节",
 		DescEn: "Hosts point-to-point share page bytes",
 	},
+	{
+		ID: "kb", Zh: "托管知识库", En: "Host knowledge bases",
+		Desc:   "托管可检索的文档语料（`@命名空间/slug`，带版本历史）：Agent 落地前先把库拉下来",
+		DescEn: "Hosts retrievable document corpora (with revision history) that an agent pulls before it runs",
+	},
+	{
+		ID: "mem", Zh: "托管 Agent 记忆", En: "Host agent memory",
+		Desc:   "托管的键值记忆（可 TTL、可追溯来源）：跨运行/跨机器记得住",
+		DescEn: "Hosted key/value memory (TTL, source-traceable) so an agent remembers across runs and machines",
+	},
+	{
+		ID: "ckpt", Zh: "托管检查点", En: "Host checkpoints",
+		Desc:   "托管不可变快照（字节进 blob + 血缘）：交接与回滚的落点",
+		DescEn: "Hosts immutable snapshots (bytes in blob storage, with lineage) for handoff and rollback",
+	},
+	{
+		ID: "store", Zh: "通用记录仓", En: "Generic record store",
+		Desc:   "**声明式集合 + 记录 CRUD**：新增一类内容（issue / log / note / …）只要声明集合，不用改服务端。集合属于命名空间；没声明的字段写不进来，没声明的字段不能当过滤条件，不可变的集合没有 PUT",
+		DescEn: "**Declarative collections + record CRUD**: adding a new kind of content (issue / log / note / …) only needs a collection declaration — no server change. Collections belong to a namespace; undeclared fields cannot be written or filtered on, and immutable collections have no PUT",
+	},
+	{
+		ID: "trace", Zh: "收运行轨迹", En: "Host run traces",
+		Desc:   "**接受 Agent / HUR 的运行轨迹**：能力评估与后训练数据集的落点。轨迹默认私有，内容级别（摘要 / 预览 / 原文）由采集方在包里、命令里显式声明",
+		DescEn: "**Accepts run traces from agents / HUR packages**: the landing spot for capability evaluation and post-training datasets. Traces are private by default; the content level (digest / preview / full) is declared explicitly by the collector",
+	},
 }
 
 // offerAliases 历史短名 → 规范 id。
 // 节点上报时一直可以写 `mcp,api`（文档与示例都这么写），归一后照旧能被 `--can serve:mcp` 搜到。
 var offerAliases = map[string]string{
-	"mcp":       "serve:mcp",
-	"api":       "serve:http",
-	"http":      "serve:http",
-	"openapi":   "serve:http",
-	"wasm":      "run:wasm",
-	"js":        "run:js",
-	"process":   "run:process",
-	"container": "run:container",
-	"remote":    "run:remote",
-	"llm":       "egress:llm",
-	"internet":  "egress:internet",
+	"mcp":         "serve:mcp",
+	"api":         "serve:http",
+	"http":        "serve:http",
+	"openapi":     "serve:http",
+	"wasm":        "run:wasm",
+	"js":          "run:js",
+	"process":     "run:process",
+	"container":   "run:container",
+	"remote":      "run:remote",
+	"llm":         "egress:llm",
+	"internet":    "egress:internet",
+	"traces":      "trace",
+	"telemetry":   "trace",
+	"knowledge":   "kb",
+	"kb":          "kb",
+	"memory":      "mem",
+	"checkpoint":  "ckpt",
+	"checkpoints": "ckpt",
 }
 
 var offerIndex = func() map[string]bool {

@@ -119,7 +119,7 @@ func (s *Server) createGrant(c *gin.Context) {
 		return
 	}
 	if !model.ValidGrantKind(body.Kind) {
-		fail(c, 400, "bad_request", "kind 只能是 artifact 或 node")
+		fail(c, 400, "bad_request", "kind 只能是 "+strings.Join(model.GrantKinds, " | "))
 		return
 	}
 	u, err := s.resolveUser(firstNonEmpty(body.Ref, body.UserID))

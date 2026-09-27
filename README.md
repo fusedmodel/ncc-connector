@@ -40,6 +40,78 @@ bytes to a third party.
 | **Node administration (admin)** | A node administrator manages **users / nodes / services** (disable, enable, reset passwords, remove, archive); every action is audited | `/api/admin/*` |
 | **Multi-node (master/worker)** | Workers register and heartbeat their local directory; the master aggregates, routes by capability, proxies bytes, and can **replicate** artifacts to workers and **revoke** them on removal | `/api/cluster*` |
 | **Hole-punching readiness (P2P)** | Decide on **this machine** whether cross-network reachability is possible: NAT profile plus a real (zero-byte) probe against a peer's mapping; optionally expose a **STUN-answer-only** hole-punchable entry point | `/api/p2p/self`, `/api/p2p/check`, `/api/p2p/serve` |
+| **Run traces** | Collect what actually ran (agent sessions and HUR executions) so you can **evaluate capability** (success rate, latency, tokens, cost, human verdicts per package version) and **export post-training datasets** (JSONL with grades / rewards / splits). Private by default, opt-in, digest-first | `/api/traces*` |
+| **Generic record store (dynamic storage)** | **Declaring a collection is the entire cost of a new kind of content** (issues, run logs, retros, notes…) — the server never changes. Fields, filterable fields, mutability, visibility, size cap and TTL are all declared; records are validated against that declaration | `/api/store*` |
+
+### The record store in one minute
+
+`ncc store ls` answers **"what content does this node have"**: the built-in kinds
+(kb / mem / ckpt / trace, whose names are reserved) plus every declared collection —
+and the four built-ins are written as declarations too, so the inventory and the field
+shapes come from the same place. The five content kinds also share **one constant of
+invariants** returned by all five `/kinds` endpoints (the smoke asserts the five copies are
+byte-identical), and the node console gained a "content" section for browsing public
+collections and records (`?q=` there is keyword matching, not indexed retrieval).
+
+Knowledge bases, memory, checkpoints and traces are four kinds of content stuck in four copies
+of the same machinery (namespace scoping, fetch by key, paging, tags, visibility, revisions,
+caps, expiry, soft delete). This is that machinery, once — with the *declaration* kept
+separate from the *data*:
+
+```bash
+ncc store declare issue \
+  --field 'title:string!' --field 'status:enum:open|closed|triaged' \
+  --field 'labels:string[]' --field 'body:text?search' \
+  --index status,labels
+ncc store put issue ISS-1 --body "Login page unresponsive" \
+  --field 'title=Login button does nothing' --field 'status=open' --field 'labels=bug,web'
+ncc store list issue --where status=open --q login
+```
+
+Six red lines (they are what makes it safe to put someone else's data in):
+
+1. **Dynamic ≠ schemaless** — undeclared fields cannot be written; a field that is not in
+   `index` **cannot** be used as a filter (400 listing what you *can* filter on — never a
+   silent empty result).
+2. **Immutable is immutable** — `mutable=false` / `append_only=true` collections have no
+   update path, and the rule is enforced **in the data layer**, so switching POST/PUT does not
+   bypass it. Byte-identical resends are idempotent duplicates (nothing changed).
+3. **CRUD ≠ authorization** — reading/writing across namespaces needs a `grant`. Visibility is
+   decided **per collection**: a record cannot opt itself into being public.
+4. **Archive ≠ delete** — `DELETE` archives; `?hard=1` really deletes.
+5. **No large objects** — inline text only (256KB default, 1MB hard cap). Bytes belong to
+   artifacts or checkpoint blobs.
+6. **History keeps no body copies** — metadata only (who, when, which digest, which note, and
+   the note travels with *its own* revision, so the very first note is never lost).
+
+Field declarations: `title:string` · `title:string!` (required) ·
+`status:enum:open|closed` · `labels:string[]` · `body:text?search` · `owner:ref`
+(types: `string` / `text` / `int` / `bool` / `string[]` / `ref` / `enum:a|b|c`).
+Filtering is `?f.<field>=value` — the `f.` prefix exists so a collection can declare a field
+named `status` without colliding with the reserved record-state parameter.
+
+Verification: `bash scripts/store-smoke.sh` (86 checks: the six invariants, authorization,
+public visibility, expiry, conflicts) — and the CLI side
+`ncc-cli/scripts/store-smoke.sh` (133 checks: the whole declare→write→read→update→history→
+archive path, client-side validation against the declaration, the package declaration rules,
+**declarations as configuration** (export → re-apply faithfully, `--check` as a CI gate), and
+the model face).
+
+### Declarations are configuration
+
+A collection declaration is a config resource, not a one-off command — it belongs in git,
+gets reviewed, and is applied by diff:
+
+```bash
+ncc store export --dir stores/          # one <collection>.json each + a README
+ncc store declare --dir stores/ --check  # what would change (exit 1 on drift → CI gate)
+ncc store declare --dir stores/          # apply (idempotent)
+```
+
+**One shape, two uses**: the same `CollectionSpec` says what a node **offers**, and what a
+package **needs** (`state.stores[]`, plus `mode`). So `--file` also eats a `hur.json`
+directly. `declare` states the whole truth rather than patching, and what can be caught
+offline (an `index` field that `fields` never declared) is caught before the node ever sees it.
 
 ## Architecture
 
@@ -469,7 +541,7 @@ Public (read):
 | Method / path | Description |
 |---|---|
 | `GET /api/health` · `GET /api/meta` | Liveness, plus this node's self-description (role / node id / size / console address) |
-| `GET /api/meta` → `kind` + `capabilities` | **The node declaring its own abilities** (`node`; `registry` / `config` / `share` / `nodes` / `grants` / `access` / `cluster` / `admin` / `p2p`). The CLI and MCP allow commands based on this list — the day it declares `services` / `profile`, the same-named commands just work on this node |
+| `GET /api/meta` → `kind` + `capabilities` | **The node declaring its own abilities** (`node`; `registry` / `config` / `share` / `nodes` / `grants` / `access` / `cluster` / `admin` / `p2p` / `trace` / `kb` / `mem` / `ckpt`). The CLI and MCP allow commands based on this list — the day it declares `services` / `profile`, the same-named commands just work on this node |
 | `GET /api/registry/kinds` | Artifact kinds and counts |
 | `GET /api/registry?q=&kind=&tag=&namespace=&page=&size=` | Directory search (this node is authoritative) |
 | `GET /api/registry/<@ns/slug\|A-…>` | Artifact detail |
@@ -489,6 +561,14 @@ Public (read):
 | `GET /j/:key` | Onboarding short-link landing page (the secret is in the fragment, invisible to the server) |
 | `GET /api/cluster` · `GET /api/cluster/workers` | Cluster overview (master + every worker) |
 | `GET /api/cluster/directory?q=&kind=&tag=` | Aggregated directory (local + remote, entries carry `via`; local entries carry `replicas`) |
+| `GET /api/traces/kinds` | Trace vocabularies and limits (kinds / statuses / payload levels / step types / label keys / grades / splits) |
+| `GET /api/kb/kinds` | Knowledge-base kinds / formats / statuses and limits (search is **keyword-weighted**, stated plainly) |
+| `GET /api/kb?namespace=&kind=&tag=&q=&archived=&page=&size=` | Knowledge-base directory. Anonymous callers see public documents only; with credentials you get public ∪ your namespaces ∪ namespaces you were granted (`all=1` widens to the whole node for an admin) |
+| `GET /api/kb/<@ns/slug\|KD-…>?revision=N` | One document with its content (`checksum` = `sha256` of the content); `revision=N` fetches a historical version |
+| `GET /api/kb/<ref>/revisions` | Revision history (who changed what, when — no content) |
+| `GET /api/kb/bundle?namespace=&kind=&tag=` | Group fetch for agents: every readable document with `content` + `checksum`, ready to be cached locally |
+| `GET /api/mem/kinds` | Memory kinds and limits |
+| `GET /api/ckpt/kinds` | Checkpoint labels and limits |
 
 Requires login (`Authorization: Bearer <JWT or ncc_ API key>`):
 
@@ -514,6 +594,24 @@ Requires login (`Authorization: Bearer <JWT or ncc_ API key>`):
 | `POST /api/configs` · `PATCH/DELETE /api/configs/<ref>` | Create / update content (a new revision) / delete a config (needs `config:write` and membership) |
 | `POST /api/configs/<ref>/rollback` | Roll back to a revision (written back as a new revision; history is never rewritten) |
 | `GET /api/configs/bundle?namespace=&env=&kind=&tag=&secrets=1&reveal=1` | Group fetch (`env` matches `prod` and `any`; `secret` configs are skipped by default) |
+| `POST /api/traces` | Ingest run traces (batch `{"traces":[…]} `or a single document). Idempotent by `(namespace, traceId)`: same digest → `duplicates`; same id different digest → `trace_conflict` |
+| `GET /api/traces?ref=&kind=&status=&agent=&node=&model=&payload=&tag=&grade=&split=&labeled=&since=&until=&q=&page=&size=` | List traces. Default scope is *mine + granted to me*; `mine=1` narrows to my namespaces, `all=1` (admin) widens to the whole node |
+| `GET /api/traces/:id` | One trace in full (document + evaluation label history) |
+| `POST /api/traces/:id/labels` | Append an evaluation label (`grade` / `reward` / `score` / `task` / `split` / `failure` or a free-form key). Append-only: labels never rewrite the trace |
+| `GET /api/traces/stats` | **Aggregates for capability evaluation**: success rate, latency percentiles, tokens/cost, breakdown by package version, label coverage, grade distribution, failure taxonomy |
+| `GET /api/traces/export?…&format=jsonl\|json&limit=` | **Dataset export** — JSONL with a dataset digest (`sha256`) for reproducibility; `X-NCC-Truncated` tells you when `limit` cut the result short |
+| `DELETE /api/traces/:id` | Delete a trace (namespace managers or an admin) |
+| `POST /api/kb` · `PATCH\|DELETE /api/kb/<ref>` | Create or update a document (an update appends a revision), rename / archive / restore / delete (needs `kb:write` **and** namespace membership) |
+| `GET /api/mem/lookup?namespace=&subject=&key=` | Read one memory by key — the path an agent actually takes |
+| `GET /api/mem?namespace=&subject=&prefix=&kind=&tag=&source=&pinned=&expired=&limit=` | List memories (expired ones are excluded unless `expired=1`; memory has **no public tier**) |
+| `PUT /api/mem` | Write one memory: upsert on `(namespace, subject, key)`, bumping `revision`. `ttl_days` > 0 sets an expiry, `0` clears it |
+| `DELETE /api/mem/:id` · `POST /api/mem/gc` | Delete one memory / remove expired entries for real (reads already treat them as gone) |
+| `POST /api/ckpt` | Create a checkpoint from metadata. Pass `digest` + `size` to declare bytes up-front, or leave both empty and upload them later |
+| `PUT /api/ckpt/:id/blob` | Upload the bytes (raw body). The server **recomputes `sha256` and rejects a mismatch**; a checkpoint that already has bytes cannot be overwritten |
+| `GET /api/ckpt?ref=&label=&tag=&q=&status=&limit=` · `GET /api/ckpt/:id` | List checkpoints / fetch one (the response carries a **short-lived signed `bytesUrl`**) |
+| `GET /api/ckpt/:id/bytes` | The byte stream — reachable with the signed URL **or** a credential that can read it |
+| `GET /api/ckpt/:id/lineage` · `DELETE /api/ckpt/:id` | Walk the `parent` chain back to the start / delete a checkpoint (metadata **and** bytes) |
+| `POST /api/ckpt/prune?ref=&keep=N` | Keep the newest N per subject: mark the rest `pruned`, delete their bytes, **keep the metadata** (so history has no unexplained holes) |
 | `POST /api/shares` · `GET /api/shares[?mine=1\|all=1]` · `DELETE /api/shares/:id` | Create / list / revoke share links (`all=1` requires an admin; you can only revoke your own, an admin can revoke any) |
 
 Hole-punching readiness (P2P; a decision surface that **never carries business bytes**; requires login):
@@ -540,7 +638,12 @@ Requires a **node administrator** (an admin session account, or `X-NCC-Admin-Key
 | `GET /api/admin/audit?action=&limit=&offset=` | Audit log |
 | `GET /api/admin/keys` · `POST /api/admin/keys/rotate?label=` | List machine credentials / rotate (the new secret is returned once, the old one dies immediately) |
 
-Scopes: `registry:read|download|publish`, `nodes:read|write`, `keys:write` (write implies read).
+Scopes: `registry:read|download|publish`, `nodes:read|write`, `config:read|write`, `trace:read|write|label`,
+`kb:read|write`, `mem:read|write`, `ckpt:read|write`, `p2p:read|write`, `keys:write` (write implies read).
+
+> `trace:label` is deliberately separate from `trace:write`: **collecting** traces is something an agent
+does routinely (add `--scopes trace:write` to an access ticket), while **judging** one is an evaluation
+action that should not come for free with a default credential.
 
 Errors always use `{"error":{"code":"…","message":"…"}}`, with HTTP status codes matching the
 semantics (400 bad input / 401 unauthenticated / 403 not permitted / 404 missing / 409 conflict /
@@ -554,6 +657,104 @@ the aggregated directory (searchable), hosted-node discovery (including region c
 **node administration** (enter the admin key/secret to disable accounts, reset passwords, remove nodes,
 archive service entries, revoke shares and rotate credentials from the browser), and a quick reference
 for the CLI and HTTP entry points.
+
+## Run traces (capability evaluation + post-training data)
+
+A trace is **what actually ran**: an agent session or a HUR execution. Two things come out of the same
+data: **capability evaluation** (per package version: success rate, latency, tokens, cost, human
+verdicts) and **post-training datasets** (JSONL with grades, rewards and splits).
+
+```bash
+ncc trace add --file session.jsonl --kind agent --ref @alice/hotel-skill --version 0.1.0 \
+    --payload preview --label task=book-hotel --tag prod     # collect (local only, no network)
+ncc trace push                                               # upload to this node
+ncc trace ls --remote --ref @alice/hotel-skill               # list what the node holds
+ncc trace stats --remote --ref @alice/hotel-skill            # how good is this version, really
+ncc trace label <id> --remote --grade pass --reward 1 --score 0.85 --split eval
+ncc trace export --remote --out dataset.jsonl                # what the training pipeline eats
+```
+
+**Three rules that make traces different from artifacts** (see `ncc-platform`'s `prd/ncc-trace.md`):
+
+1. **Content is not uploaded by default.** Every trace declares a `payload` level — `digest` (default:
+   hashes and structure only), `preview` (truncated), or `full` (verbatim). The **collector** decides,
+   and the server records it as-is: it never fills in or downgrades content. Redaction (API keys, emails,
+   IPs, long secrets) happens on the client, and what was done is recorded in `redaction.rules`.
+2. **Private by default.** There is no "public trace" tier. Visibility = my namespaces ∪ people I granted
+   `trace` to. Even an admin has to ask for `all=1` — seeing everybody's traces just by being an admin
+   would be a bad default.
+3. **The platform never relays traces.** They go to *your* node, at the address you typed.
+
+Traces are **immutable documents** (the collector computes the digest, the server recomputes and rejects
+mismatches) with an **append-only label table** — labelling never rewrites the fact being judged.
+
+## State: knowledge base / memory / checkpoints
+
+Three resources that belong to an **agent**, not to a package: the corpus it should read, the small
+conclusions it should remember, and the snapshots it can hand over or roll back to.
+
+```bash
+# knowledge base — content lives in the database, searchable, one revision per write
+ncc kb set refund --title "Refund flow" --summary "standard steps" --tag support \
+    --content "1. check the order id  2. confirm the payout method"
+ncc kb ls --namespace @team          # or: ncc kb search refund
+ncc kb get @alice/refund             # or --revision 1 for a historical version
+ncc kb archive @alice/refund         # archived documents drop out of listings and search
+
+# memory — key/value, upsert on the key, expiring at read time
+ncc mem set timezone "Asia/Shanghai" --source manual
+ncc mem get timezone                 # the path an agent takes
+ncc mem set timezone "UTC+8"         # same key → update (revision 2)
+ncc mem set scratch "temp note" --ttl-days 1     # expires on its own
+ncc mem gc                                          # actually remove what expired
+
+# checkpoints — immutable snapshots with lineage
+ncc ckpt save --name snap-1200 --ref @alice/agent --label run --file ./state.tar
+ncc ckpt save --name snap-1400 --ref @alice/agent --file ./state2.tar --parent-last
+ncc ckpt lineage <id>                # walk back to the start
+ncc ckpt pull <id> --out ./restore.tar   # verifies the digest **before** writing to disk
+ncc ckpt prune --ref @alice/agent --keep 5
+```
+
+**Why these are not HUR packages** (the question everyone asks first): a package is a *capability* —
+code plus a manifest, content-addressed, signed, "install it and run it". State is *data* — it gets
+rewritten, it grows, it is private by default, and its lifecycle follows the agent. Putting a knowledge
+base in a package contradicts itself on day one: a package's whole point is that its bytes **never**
+change (the digest proves "not modified"), while a knowledge base is supposed to change. What a package
+*can* do is **declare** what it needs, so "this agent needs these corpora, this memory, these
+checkpoints" becomes signable and distributable too:
+
+```jsonc
+// hur.json (harness-use package manifest) — rule R11
+"state": {
+  "kb":          [{ "ref": "@team/manual", "mode": "read" }],   // read | write | readwrite, or "*"
+  "memory":      { "subject": "self", "kinds": ["fact"], "ttl_days": 30 },
+  "checkpoints": { "enabled": true, "label": "run", "keep_local": 2 }
+}
+```
+
+`ncc kb pull --package ./agent` is the seam between the two: it reads the declaration and pulls exactly
+those corpora into `~/.ncc/kb` (incrementally, keyed by `checksum`), refusing to guess when a package
+declares nothing. (Don't confuse `state.kb` with `permissions.local.kb`: the former is a **hosted,
+mutable, grant-scoped** corpus, the latter is **read-only local files inside the package**.)
+
+**Visibility** (same shape as traces, one deliberate difference):
+
+| | knowledge base | memory | checkpoints |
+|---|---|---|---|
+| default | private | **private, and there is no public tier** | private |
+| public tier | yes (`--public`, anonymous readable) | none, by design | yes |
+| who can read | public ∪ your namespaces ∪ `state`-granted | namespace members ∪ `state`-granted | public ∪ members ∪ `state`-granted |
+| who can write | namespace members only | namespace members only | namespace members only |
+| admin | needs `all=1` | needs `all=1` | needs `all=1` |
+
+A grant has a single kind (`state`) covering all three: semantically these are "my agent's state", so
+start with one granularity and split it only when someone actually needs "knowledge but not memory".
+
+**Honest limits** (see `ncc-platform`'s `prd/ncc-state.md`): search is **keyword-weighted** (title 3 /
+summary 2 / content 1), *not* vector search; there is **no cross-node fan-out** (state lives on the node
+you wrote it to); sync is pull-only and checksum-keyed; a memory write is last-writer-wins; checkpoint
+bytes are stored as-is (no encryption) — keep sensitive material out.
 
 ## Deployment
 
@@ -648,6 +849,14 @@ no hidden global state between them.
 > use `NewServer` + `Close`, or the background loops will leak.
 
 ## Smoke test
+
+Besides the cluster smoke test above, `scripts/state-smoke.sh` drives the **state** stack end to end
+(knowledge base / memory / checkpoints) against an isolated node: it builds this repository, starts a
+node on its own port with its own data directory, registers two accounts, then exercises both the HTTP
+API and the `ncc` CLI — including digest verification on checkpoint download, the rejection of a
+mismatched blob, TTL expiry at read time, `kb pull` driven by a package declaration, cross-account
+403s, "a grantee can read but never write", and an isolation self-check that your real `~/.ncc` was
+never touched (80 assertions).
 
 ```bash
 bash scripts/smoke.sh      # starts and stops everything itself: master + worker, ports 18282/18283

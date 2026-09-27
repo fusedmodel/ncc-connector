@@ -15,6 +15,88 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Added · Hosted state: knowledge bases, memory and checkpoints
+
+Three resources that belong to an agent rather than to a package. **They are deliberately not artifact
+kinds** — a package is a *capability* (content-addressed, signed, "install and run"), while state is
+*data*: rewritten, growing, private by default, with a lifecycle of its own. A package **declares** what
+it needs (`state{}`, harness-use rule R11) and this node stores the bytes.
+
+- **`kb` — knowledge base** (`model.KbDoc` + `KbRevision`): namespace-scoped documents
+  (`@ns/slug`) with kind / format / summary / tags / `source` (where the knowledge came from) and
+  **one revision per write** (history is never rewritten). `checksum` is the `sha256` of the content.
+  Search is **keyword-weighted** (title 3 / summary 2 / content 1) — stated plainly in the API, because
+  calling it "search" without saying what kind it is would be misleading. Limit: 1 MB per document
+  (a knowledge base is a corpus, not a file dump — large binaries belong in artifacts).
+- **`mem` — memory** (`model.MemEntry`): key/value with `subject` (whose memory: `self`, a pipeline, …),
+  `kind`, `tags`, `source` (trace id / checkpoint ref / manual), `confidence` (per-mille, so no floats),
+  `pinned`, `revision` and `expiresAt`. Unique on `(namespace, subject, key)`: rewriting a key **updates**
+  it and bumps `revision`. TTL is enforced **at read time** (an expired entry simply does not exist),
+  and `gc` removes it for real. **Memory has no public tier by design** — publishing "memory" makes no
+  sense, so that tier is absent rather than unimplemented. Limit: 64 KB per value.
+- **`ckpt` — checkpoints** (`model.Checkpoint`): immutable snapshots — bytes in blob storage, metadata in
+  the database — with `label` (episode / step / run / release / handoff / manual), `step`, `subjectRef`
+  + `subjectVersion` (which package version this was taken against), `parent` (lineage, walked with a
+  cycle guard) and free-form `meta`. Creation can declare `digest` + `size` up-front or leave both
+  empty; the server **recomputes `sha256` on upload and rejects a mismatch**, and a checkpoint that
+  already has bytes cannot be overwritten. `prune` keeps the newest N per subject by marking the rest
+  `pruned` and deleting only their bytes — metadata stays, so history has no unexplained holes.
+- **Visibility**: private by default; `kb` and `ckpt` have an explicit public tier, `mem` does not;
+  anonymous callers see public documents only, credentials see *public ∪ mine ∪ granted*; `all=1`
+  (admin only) widens to the whole node. Writes always require namespace membership — a grantee can
+  read, never write. The store layer is **fail-closed** (`WHERE 1 = 0` without a scope) and handlers
+  re-check per row as defence in depth.
+- **New grant kind `state`** covering all three (one granularity on purpose: semantically these are
+  "my agent's state"; split it only when someone actually needs "knowledge but not memory").
+- **New capabilities `kb` / `mem` / `ckpt`**, new scopes `kb:read|write`, `mem:read|write`,
+  `ckpt:read|write`, and `/api/meta` reports `kbDocs` / `memEntries` / `checkpoints`.
+- **New endpoints**: `/api/kb` (`kinds`, `bundle`, list, `POST`, `GET|PATCH|DELETE <ref>`,
+  `<ref>/revisions`), `/api/mem` (`kinds`, `lookup`, list, `PUT`, `DELETE :id`, `gc`),
+  `/api/ckpt` (`kinds`, list, `POST`, `PUT :id/blob`, `GET :id`, `:id/bytes`, `:id/lineage`,
+  `:id/prune`, `DELETE :id`). Checkpoint bytes are served through a short-lived signed URL (domain-prefixed
+  `ckpt:`, so a signature for one resource can never be replayed for another) **or** a credential that can
+  read the row.
+- **`scripts/state-smoke.sh`** drives the whole thing end to end against an isolated node with an
+  isolated `NCC_HOME` (80 assertions): digest verification on download, rejection of a mismatched blob,
+  refusal to overwrite uploaded bytes, TTL expiry at read time, `kb pull` driven by a package
+  declaration, cross-account 403s, "a grantee can read but never write", and a self-check that a real
+  `~/.ncc` was never touched.
+
+### Added · Run traces: capability evaluation and post-training datasets
+
+A trace is what actually ran — an agent session or a HUR execution. The same data answers two questions:
+*is this package version any good* (success rate, latency, tokens, cost, human verdicts) and *can I train on
+it* (JSONL export with grades, rewards and splits).
+
+- **New document spec `ncc-trace/v1`** (`model/trace.go`): `kind` (`agent` / `hur-run`), `subject`
+  (`ref` + `version` — the grouping key for “did the new version get better?”), `steps`,
+  `model` / `usage`, `labels`, `tags`, `payload`, `redaction`, `digest`.
+- **`payload` is declared by the collector**: `digest` (default: hashes and structure only) / `preview`
+  (truncated) / `full` (verbatim). The server records it as-is — it never fills in or downgrades content.
+  Validation enforces coherence: a trace that says `digest` while carrying payload text is rejected.
+- **Private by default, no “public trace” tier.** Visibility is *my namespaces ∪ people I granted
+  `trace` to*; `mine=1` narrows, and even an admin needs `all=1` to widen to the whole node.
+- **Immutable document + append-only labels**: the collector computes `digest`, the server recomputes it
+  and rejects a mismatch (`trace_invalid`); evaluation labels go to a separate `trace_labels` table so
+  labelling never rewrites the fact being judged.
+- **Cross-language digest** (`model.TraceDigestCore`) is a length-prefixed concatenation rather than JSON
+  serialisation (floats, HTML escaping and key order differ between Go and Rust), so the same trace hashes
+  identically on both sides. Tests pin the same `sha256:` vector as the Rust CLI.
+- **New endpoints**: `GET /api/traces/kinds`, `POST /api/traces` (idempotent by `(namespace, traceId)`;
+  same id + same digest → `duplicates`, same id + different digest → `trace_conflict`),
+  `GET /api/traces`, `GET /api/traces/:id`, `POST|GET /api/traces/:id/labels`,
+  `GET /api/traces/stats` (success rate, latency percentiles, tokens/cost, per-version breakdown, label
+  coverage, grade distribution, failure taxonomy), `GET /api/traces/export` (JSONL + dataset digest,
+  `X-NCC-Truncated` when `limit` cut it short), `DELETE /api/traces/:id`.
+- **New scopes** `trace:read` / `trace:write` / `trace:label` (`label` deliberately separate: collecting is
+  routine for an agent, judging is an evaluation action); **new grant kind** `trace`; the node now declares
+  the **`trace` capability** in `/api/meta`, and the capability vocabulary gains a `trace` offer
+  (“this node accepts run traces”, aliases `traces` / `telemetry`).
+- **Bounded by design**: 2 MB per trace, 2000 steps, 500 per batch, 20000 per export; a truncated export
+  says so instead of silently dropping rows.
+- Tests: `model/trace_test.go` (digest vector, validation, statistics) and `store/trace_test.go`
+  (idempotency, conflict, fail-closed visibility, filters, export truncation, label projection).
+
 ### Changed · the `hur` kind label now follows the pinned HUR definition
 
 `HUR` = **Harness-Use Runtime** — that is the **runtime** (defined as the runtime that supports a
