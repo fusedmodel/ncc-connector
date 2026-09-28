@@ -30,7 +30,7 @@ import (
 )
 
 // Version 服务版本（/api/meta 与集群上报都用它）。
-const Version = "ncc-registry/0.1.0"
+const Version = "ncc-registry/0.1.1"
 
 // Server 依赖聚合。
 type Server struct {

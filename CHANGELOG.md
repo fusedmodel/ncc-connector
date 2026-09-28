@@ -13,7 +13,7 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ---
 
-## [Unreleased]
+## [0.1.1] — 2026-09-28
 
 ### Added · Hosted state: knowledge bases, memory and checkpoints
 
