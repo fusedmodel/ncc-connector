@@ -13,6 +13,25 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ---
 
+## [Unreleased]
+
+### Added · Index: hold the platform's copies and match in place
+
+The platform is **authoritative** for the index; a node holds a **copy** — so an isolated intranet
+can still find a person from one sentence of need.
+
+- **`POST /api/index`** receives an index pushed by the platform (`id` = platform index id, used as
+  `SourceID` for idempotency): re-pushing the same one **updates** rather than duplicating; nested
+  `provider` / `source` shapes are accepted and missing fields are inherited from the source.
+- **`GET /api/index`** (channel prefix match, keyword, kind), **`GET /api/index/channels`** (channels
+  and sizes) and **`GET /api/match`** (local scoring: channel / category / tags / body tokens / region /
+  kind — **channel or region alone can never recall** anything).
+- **Scores never leave the platform**: a node's ranking has no reputation weight, and the response
+  says so plainly rather than dressing up data it does not have.
+- Capability `index` (`GET /api/meta`) plus scopes `index:read` / `index:write`.
+
+---
+
 ## [0.1.1] — 2026-09-28
 
 ### Added · Hosted state: knowledge bases, memory and checkpoints

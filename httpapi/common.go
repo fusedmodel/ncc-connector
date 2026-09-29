@@ -199,6 +199,12 @@ var DefaultScopes = []string{
 	"p2p:read", "p2p:write",
 }
 
+// IndexScopes 索引相关作用域：写 = 接收平台推来的索引，读 = 本地检索与匹配。
+//
+// 刻意**不进 DefaultScopes**：索引的权威在平台，节点侧只是副本 —— 一把新签的
+// key 该能读（检索便宜且无害），但要往节点写索引，得显式给 `index:write`。
+var IndexScopes = []string{"index:read", "index:write"}
+
 // NodeTicketScopes 接入票据兑换出的节点令牌默认作用域：
 // 能上报自己的心跳、能看/拉公开制品，但**不能发布**别人的条目。
 // 要让它管理配置，签发时显式加 --scopes config:read,config:write。
@@ -220,6 +226,7 @@ var AllScopes = []string{
 	"kb:read", "kb:write", "mem:read", "mem:write", "ckpt:read", "ckpt:write",
 	"store:read", "store:write",
 	"p2p:read", "p2p:write",
+	"index:read", "index:write",
 	"keys:write",
 }
 
@@ -259,6 +266,8 @@ func scopeImplies(have, want string) bool {
 		return want == "ckpt:read"
 	case "store:write":
 		return want == "store:read"
+	case "index:write":
+		return want == "index:read"
 	}
 	return false
 }

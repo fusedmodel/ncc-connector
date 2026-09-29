@@ -106,6 +106,8 @@ func Open(path string) (*Store, error) {
 		// NCC Store：通用记录仓（集合 = 声明，记录 = 数据）。kb/mem/ckpt/trace 的**机械部分**
 		// 会逐步收敛到这里；新内容类型（issue / log / …）声明一个集合即可，不改服务端。
 		&model.Collection{}, &model.Record{}, &model.RecordRevision{}, &model.RecordIndex{},
+		// NCC Index：平台推来的索引副本（内网本地检索用；幂等键 = 平台的索引 id）
+		&model.IndexEntry{},
 	); err != nil {
 		return nil, fmt.Errorf("迁移表结构失败: %w", err)
 	}

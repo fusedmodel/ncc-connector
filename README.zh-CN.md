@@ -34,6 +34,7 @@ NCCR_PORT=8282 ./dist/ncc-registry          # → http://localhost:8282
 | **打洞条件（P2P）** | 在**这台机器**上判断跨网可不可达：NAT 画像 + 与对端映射真实对打（0 字节）；可选开一个**只应答 STUN** 的可被打洞入口 | `/api/p2p/self`、`/api/p2p/check`、`/api/p2p/serve` |
 | **运行轨迹（Trace）** | 采集**真跑过什么**（Agent 会话 / HUR 执行），用于**能力评估**（按制品版本看成功率、耗时、token、花费、人工结论）与**后训练数据集**导出（JSONL + 奖励/得分/切分）。默认私有、显式采集、默认只有摘要 | `/api/traces*` |
 | **状态（kb / mem / ckpt）** | 托管 **Agent 自己的三样状态**：知识库（语料，可检索、改一次留一版）、记忆（键值 + TTL + 来源）、检查点（不可变快照 + 血缘）。**默认私有**（记忆没有公开档）；包用 `hur.json` 的 `state{}`（规则 R11）声明要哪些，字节住在本节点 | `/api/kb*` `/api/mem*` `/api/ckpt*` |
+| **索引（Index）** | 接住平台推过来的**索引副本**（谁 / 在哪 / 能干什么 / 要什么，带频道与来源 id，幂等去重），并就地提供匹配查询 —— 内网不出网也能一句需求找人 | `/api/index`（`GET` 浏览 / `POST` 接收）、`/api/index/channels`、`/api/match` |
 
 ## 架构
 
@@ -437,6 +438,8 @@ ncc registry rm @alice/x --yes                                         # 下架 
 | `GET /api/cluster` · `GET /api/cluster/workers` | 集群总览（master + 各 worker） |
 | `GET /api/cluster/directory?q=&kind=&tag=` | 聚合目录（本地 + 远端，条目带 `via`；本地条目带 `replicas`） |
 | `GET /api/traces/kinds` | 轨迹词表与上限（类型 / 状态 / 内容级别 / 步骤类型 / 标注键 / 结论 / 切分） |
+| `POST /api/index` · `GET /api/index?channel=&q=&prefix=&limit=` | 接收平台推来的**索引副本**（按来源 id 幂等）/ 浏览（频道可前缀匹配） |
+| `GET /api/index/channels` · `GET /api/match?intent=&channel=&region=&kind=&want=` | 频道清单 / **就地匹配**（内网不出网也能用；响应里没有评分 —— 平台不向节点下发评分数据） |
 | `GET /api/kb/kinds` | 知识库类型 / 格式 / 状态与上限（并**明说检索是关键词加权**） |
 | `GET /api/kb?namespace=&kind=&tag=&q=&archived=&page=&size=` | 知识库目录。匿名只看公开；带凭据看「公开 ∪ 我的命名空间 ∪ 被授权的」（管理员 `all=1` 看全节点） |
 | `GET /api/kb/<@ns/slug\|KD-…>?revision=N` | 一篇文档（含正文，`checksum` = 正文的 `sha256`）；`revision=N` 取历史版本 |

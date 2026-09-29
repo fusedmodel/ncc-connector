@@ -42,6 +42,7 @@ bytes to a third party.
 | **Hole-punching readiness (P2P)** | Decide on **this machine** whether cross-network reachability is possible: NAT profile plus a real (zero-byte) probe against a peer's mapping; optionally expose a **STUN-answer-only** hole-punchable entry point | `/api/p2p/self`, `/api/p2p/check`, `/api/p2p/serve` |
 | **Run traces** | Collect what actually ran (agent sessions and HUR executions) so you can **evaluate capability** (success rate, latency, tokens, cost, human verdicts per package version) and **export post-training datasets** (JSONL with grades / rewards / splits). Private by default, opt-in, digest-first | `/api/traces*` |
 | **Generic record store (dynamic storage)** | **Declaring a collection is the entire cost of a new kind of content** (issues, run logs, retros, notes…) — the server never changes. Fields, filterable fields, mutability, visibility, size cap and TTL are all declared; records are validated against that declaration | `/api/store*` |
+| **Index (mirror + local match)** | Holds **index copies** pushed by the platform (who / where / what they offer or need, with a channel and a source id, idempotent) and matches in place, so an isolated intranet can still find a person from one sentence of need | `/api/index` (`GET` browse / `POST` receive), `/api/index/channels`, `/api/match` |
 
 ### The record store in one minute
 
@@ -541,7 +542,7 @@ Public (read):
 | Method / path | Description |
 |---|---|
 | `GET /api/health` · `GET /api/meta` | Liveness, plus this node's self-description (role / node id / size / console address) |
-| `GET /api/meta` → `kind` + `capabilities` | **The node declaring its own abilities** (`node`; `registry` / `config` / `share` / `nodes` / `grants` / `access` / `cluster` / `admin` / `p2p` / `trace` / `kb` / `mem` / `ckpt`). The CLI and MCP allow commands based on this list — the day it declares `services` / `profile`, the same-named commands just work on this node |
+| `GET /api/meta` → `kind` + `capabilities` | **The node declaring its own abilities** (`node`; `registry` / `config` / `share` / `nodes` / `grants` / `access` / `cluster` / `admin` / `p2p` / `trace` / `kb` / `mem` / `ckpt` / `index`). The CLI and MCP allow commands based on this list — the day it declares `services` / `profile`, the same-named commands just work on this node |
 | `GET /api/registry/kinds` | Artifact kinds and counts |
 | `GET /api/registry?q=&kind=&tag=&namespace=&page=&size=` | Directory search (this node is authoritative) |
 | `GET /api/registry/<@ns/slug\|A-…>` | Artifact detail |
@@ -562,6 +563,8 @@ Public (read):
 | `GET /api/cluster` · `GET /api/cluster/workers` | Cluster overview (master + every worker) |
 | `GET /api/cluster/directory?q=&kind=&tag=` | Aggregated directory (local + remote, entries carry `via`; local entries carry `replicas`) |
 | `GET /api/traces/kinds` | Trace vocabularies and limits (kinds / statuses / payload levels / step types / label keys / grades / splits) |
+| `POST /api/index` · `GET /api/index?channel=&q=&prefix=&limit=` | Receive **index copies** pushed by the platform (idempotent by source id) / browse (channel prefix match) |
+| `GET /api/index/channels` · `GET /api/match?intent=&channel=&region=&kind=&want=` | Channel list / **match in place** (works with no outbound network; no scores in the response — the platform never ships rating data to nodes) |
 | `GET /api/kb/kinds` | Knowledge-base kinds / formats / statuses and limits (search is **keyword-weighted**, stated plainly) |
 | `GET /api/kb?namespace=&kind=&tag=&q=&archived=&page=&size=` | Knowledge-base directory. Anonymous callers see public documents only; with credentials you get public ∪ your namespaces ∪ namespaces you were granted (`all=1` widens to the whole node for an admin) |
 | `GET /api/kb/<@ns/slug\|KD-…>?revision=N` | One document with its content (`checksum` = `sha256` of the content); `revision=N` fetches a historical version |

@@ -247,6 +247,16 @@ func NewServer(cfg *config.Config, st *store.Store, blob storage.Storage) (*Serv
 	storeAPI.DELETE("/:col/:key", requireScope("store:write"), s.deleteStoreRecord)
 	storeAPI.GET("/:col/:key", s.getStoreRecord)
 
+	// NCC Index：接收平台推来的索引副本 + 本地匹配。
+	//
+	// 写口只做「接收推送」（带 sourceId，幂等覆盖）—— 索引的权威在平台，
+	// 节点侧开放自建就会立刻分叉出两个真相。读口公开（内网里检索本来就该便宜）。
+	api.GET("/index", s.listIndex)
+	api.GET("/index/", s.listIndex)
+	api.GET("/index/channels", s.indexChannels)
+	api.POST("/index", requireScope("index:write"), s.pushIndex)
+	api.POST("/index/", requireScope("index:write"), s.pushIndex)
+	api.GET("/match", s.matchIndex)
 	acc := api.Group("/access")
 	acc.POST("/redeem", s.redeem)
 	acc.GET("/tickets", requireAuth(), s.listTickets)
@@ -389,6 +399,8 @@ func (s *Server) meta(c *gin.Context) {
 	kbDocs, memEntries, ckpts, _ := s.St.StateCounts()
 	// 通用记录仓：集合数 + 记录数（新增一类内容不改服务端，但容量规划得看得见）
 	collections, records, _ := s.St.StoreCounts()
+	// 索引副本：平台推来的索引条数（内网本地匹配能查到的量）
+	indexEntries, _ := s.St.CountIndex()
 	hasAdminKey, _ := s.St.HasActiveAdminKey()
 	out := gin.H{
 		"product": "ncc-registry",
@@ -403,6 +415,9 @@ func (s *Server) meta(c *gin.Context) {
 			// 通用记录仓：集合是声明、记录是数据。**一个能力对全部集合生效** ——
 			// 能力回答"这台节点支不支持这类功能"，不是"有哪些集合"（那会爆炸）。
 			"store",
+			// 索引与匹配：接收平台推来的索引**副本**，在内网本地做匹配
+			// （`ncc match --from <节点>`）。节点侧不持有评分，本地排序只有相关度。
+			"index",
 		},
 		"counts": gin.H{
 			"artifacts": artifacts, "hostedNodes": nodes, "users": users,
@@ -416,6 +431,8 @@ func (s *Server) meta(c *gin.Context) {
 			"kbDocs": kbDocs, "memEntries": memEntries, "checkpoints": ckpts,
 			// 通用记录仓：集合数与记录数（"又往仓里加了什么"要看得见）
 			"collections": collections, "records": records,
+			// 索引副本：平台推来多少条（内网本地检索能查到的量）
+			"indexEntries": indexEntries,
 		},
 		// 存储目录：部署时最常被问的就是「字节到底落在哪」，直接报出来。
 		"storage": gin.H{
