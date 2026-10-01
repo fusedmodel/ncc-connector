@@ -54,6 +54,7 @@ func NewServer(cfg *config.Config, st *store.Store, blob storage.Storage) (*Serv
 	// 远程执行：把上次进程死掉时还挂在 running 的任务标成 failed。
 	// 不做这一步，那些行会永远停在 running —— 调用方会一直等一个已经不存在的进程。
 	s.staleExecRuns()
+	s.staleConns()
 
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
@@ -309,6 +310,17 @@ func NewServer(cfg *config.Config, st *store.Store, blob storage.Storage) (*Serv
 	r.GET("/a/:token", s.renderCardPage)
 	r.POST("/a/:token", s.unlockCardPage)
 
+	// 通信基础设施：**连接通道**（到 Cloud instance / 内网节点的会话）——
+	// 通道上可反复执行命令、推/拉文件，全程进账本。默认关（NCCR_CONN_ALLOW=1 才开）。
+	cn := api.Group("/conn")
+	cn.GET("/connections", s.listConns)
+	cn.POST("/connections", s.openConn)
+	cn.GET("/connections/:id", s.getConn)
+	cn.DELETE("/connections/:id", s.closeConn)
+	cn.POST("/connections/:id/exec", s.connExec)
+	cn.POST("/connections/:id/files", s.connPutFile)
+	cn.GET("/connections/:id/files", s.connGetFile)
+
 	// 远程执行（Remote Cloud Computer / 云电脑）：把任务丢到**这台机器**上跑。
 	// kinds 公开：路由要按「真的能跑」挑机器，而不是按节点自己贴的标签猜。
 	// runs 要登录或节点令牌；engine=process/container 还必须运维先放行。
@@ -453,6 +465,9 @@ func (s *Server) meta(c *gin.Context) {
 			// **具体能跑哪些引擎看 `/api/exec/kinds`** —— 能力面只说"有执行服务"，
 			// 因为 wasm / process / container 是运维按机器逐个放行的（不是布尔开关）。
 			"exec",
+			// 连接通道（`ncc conn`）：**会话面**的工作目录 + 文件推拉 + 账本。
+			// 同样是照不照放行由运维定（NCCR_CONN_ALLOW，默认关）—— 声明的是"有这道门"。
+			"conn",
 		},
 		"counts": gin.H{
 			"artifacts": artifacts, "hostedNodes": nodes, "users": users,

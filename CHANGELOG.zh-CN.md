@@ -16,6 +16,29 @@
 
 ## [未发布]
 
+### 新增 · 连接通道（`ncc conn`）：通信基础设施
+
+任务（`/api/exec/runs`）回答「跑一条命令」；通道回答「**在一台机器上连着干一段活**」。
+一条通道 = 目标机上一个工作目录 + 一段有效期 + 一条审计线索，上面可以反复执行命令、推/拉文件。
+
+- 接口：`POST/GET /api/conn/connections`、`GET|DELETE /api/conn/connections/<id>`、
+  `POST …/<id>/exec`、`POST|GET …/<id>/files?path=<相对>`；能力位 `conn`，scope `conn:read|write`，
+  审计动作 `conn.open|exec|put|close`。
+- **执行器不重复写第二遍**：通道上的 `exec` 复用 `/api/exec/*` 那条路（`internal/execrun`：限额、
+  环境变量白名单、进程组整组回收、超时、日志截断），只是记录多一个 `connId` —— 所以 `GET …/<id>`
+  能回答「这条通道上跑过什么」。默认**同步**返回并**带上日志尾巴**（通道上一半用法是跑条命令看结果）。
+- **默认关**：`NCCR_CONN_ALLOW=1` 才开（通道能跑任意命令、写文件 = 最高权限）；未开时建连 403，
+  连字节都不收。相关配置：`NCCR_CONN_DIR`（默认 `<data>/conn`）、`NCCR_CONN_TTL`（默认 1h，单次上限 8h）。
+- **文件面锁在工作目录**：只收相对路径，`..` / 绝对路径 / 空字节一律 400，拼完再复核前缀
+  （`safeJoin`）。推文件返回 `sha256`，拉文件在响应头里回同一个指纹。
+- **过期是推导的，不是状态翻转**：`state = open | closed | expired` 由 `Status` + `ExpiresAt` 算出。
+  ⚠️ 一开始把过期改写成 `closed`，结果「过期」与「被人关掉」在接口上分不出来（都是 410、状态都是
+  closed）—— 现已分开：`410 conn_expired` / `410 conn_closed`。
+- **关闭 ≠ 删除**：`close` 后**账本仍然可读**（`GET …/<id>` 不再走「可用性守卫」，只做归属判断），
+  可选项分开：`?purge=1` 删工作目录。
+- 启动时只**数一下**已经过期的通道并打日志（`staleConns`），不再改写数据。
+- 冒烟：`scripts/conn-smoke.sh`（57 项：默认关 / 文件面门禁 / 会话语义 / 指纹 / CLI 串联 / 关闭与过期分开）。
+
 ### 新增 · Agent 名片（Agent Share）：把「我设计好的 Agent」点到点交给指定的人
 
 与云端的 `/api/agent-cards` **同形** —— 同一份 `ncc agent` 客户端把目标切到本节点就能用，客户端一行不用改。

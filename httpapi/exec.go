@@ -272,6 +272,17 @@ func (s *Server) createExecRun(c *gin.Context) {
 
 // runExec 后台执行（goroutine）。状态一路如实落库。
 func (s *Server) runExec(parent context.Context, rec *model.ExecRun, plan execrun.Plan, timeout time.Duration, logPath string) {
+	go s.execOne(parent, rec, plan, timeout, logPath)
+}
+
+// runExecSync 同步执行（连接通道上用）：跑完才返回，调用方直接拿结果。
+func (s *Server) runExecSync(parent context.Context, rec *model.ExecRun, plan execrun.Plan, timeout time.Duration, logPath string) {
+	s.execOne(parent, rec, plan, timeout, logPath)
+}
+
+// execOne 真正跑一条任务：登记 → 跑 → 落终态。同步/异步两个入口共用同一份实现
+// （**别写两遍**：限额、环境变量白名单、进程组回收都在这条路上）。
+func (s *Server) execOne(parent context.Context, rec *model.ExecRun, plan execrun.Plan, timeout time.Duration, logPath string) {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	j := &execJob{cancel: cancel}
@@ -338,6 +349,12 @@ func (s *Server) getExecRun(c *gin.Context) {
 	if !ok2 {
 		return
 	}
+	ok(c, 200, gin.H{"run": s.execJSONTail(rec)})
+}
+
+// execJSONTail = execJSON + 日志尾巴。状态接口和「通道上的同步执行」共用**同一份**
+// （后者刚跑完就该把结果一次交出去 —— 只回一个 task id 等于逼客户端再发一次请求）。
+func (s *Server) execJSONTail(rec *model.ExecRun) gin.H {
 	out := s.execJSON(rec)
 	if rec.LogPath != "" {
 		if tail, truncated, err := readTail(rec.LogPath, execLogTailMax); err == nil {
@@ -345,7 +362,7 @@ func (s *Server) getExecRun(c *gin.Context) {
 			out["logTailTruncated"] = truncated
 		}
 	}
-	ok(c, 200, gin.H{"run": out})
+	return out
 }
 
 // execRunLog GET /api/exec/runs/:id/log —— 日志全文（text/plain）。
@@ -435,12 +452,15 @@ func (s *Server) execJSON(r *model.ExecRun) gin.H {
 		"reason": r.Reason, "timeoutSec": r.TimeoutSec,
 		"durationMs": r.DurationMs(),
 		"logBytes":   r.LogBytes, "logTruncated": r.LogTruncated,
-		"logUrl":  "/api/exec/runs/" + r.ID + "/log",
-		"workDir": r.WorkDir,
-		"startedAt":   r.StartedAt, "finishedAt": r.FinishedAt, "createdAt": r.CreatedAt,
+		"logUrl":    "/api/exec/runs/" + r.ID + "/log",
+		"workDir":   r.WorkDir,
+		"startedAt": r.StartedAt, "finishedAt": r.FinishedAt, "createdAt": r.CreatedAt,
 	}
 	if r.Error != "" {
 		out["error"] = r.Error
+	}
+	if r.ConnID != "" {
+		out["connId"] = r.ConnID
 	}
 	if r.Image != "" {
 		out["image"] = r.Image

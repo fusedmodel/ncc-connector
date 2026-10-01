@@ -83,6 +83,14 @@ type Config struct {
 	ExecImages    []string      // NCCR_EXEC_IMAGES：container 引擎允许的镜像（空 = 不限制；只放行列表内的）
 	ExecTags      []string      // NCCR_EXEC_TAGS：这台机器的标签（hur / gpu / os…），供「按标签挑节点」
 
+	// 连接通道（通信基础设施）—— 让调用方在这台机器上开一条会话：跑命令、推/拉文件。
+	//
+	// ⚠️ **默认关**：通道能跑任意命令、写文件，与 `exec` 的 process/container 同档（最高权限）；
+	// 而且要配 `NCCR_EXEC_ALLOW` 里至少放行一个可跑引擎，通道才有意义。
+	ConnAllow bool          // NCCR_CONN_ALLOW（默认 false）
+	ConnDir   string        // NCCR_CONN_DIR（默认 <data>/conn）
+	ConnTTL   time.Duration // NCCR_CONN_TTL：未指定时的默认有效期（默认 1h，上限 8h）
+
 	CORSOrigins string
 }
 
@@ -236,6 +244,14 @@ func Load() (*Config, error) {
 	c.ExecMaxOutput = int64(envInt("NCCR_EXEC_MAX_OUTPUT", 1<<20))
 	c.ExecImages = envList("NCCR_EXEC_IMAGES")
 	c.ExecTags = envList("NCCR_EXEC_TAGS")
+
+	connDir, err := resolveDir(dataDir, envOr("NCCR_CONN_DIR", "conn"))
+	if err != nil {
+		return nil, fmt.Errorf("创建连接目录失败: %w", err)
+	}
+	c.ConnDir = connDir
+	c.ConnAllow = envBool("NCCR_CONN_ALLOW", false)
+	c.ConnTTL = envDur("NCCR_CONN_TTL", time.Hour)
 
 	// 身份与密钥：缺省落盘，保证重启后不变。
 	c.NodeID = persistentSecret(c.NodeID, filepath.Join(dataDir, "node-id"), "ND", 12)

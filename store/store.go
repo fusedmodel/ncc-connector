@@ -97,6 +97,8 @@ func Open(path string) (*Store, error) {
 		&model.AgentCard{},
 		// 远程执行（云电脑）：一次任务一行，日志落在工作目录里
 		&model.ExecRun{},
+		// 连接通道（通信基础设施）：一段会话一行，工作目录是文件面的边界
+		&model.Conn{},
 		&model.ClusterWorker{}, &model.ArtifactAdvert{}, &model.ReplicaTarget{},
 		&model.Grant{}, &model.AccessTicket{},
 		// NCC Config：托管配置（条目 + 版本历史）

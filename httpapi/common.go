@@ -229,6 +229,8 @@ var AllScopes = []string{
 	"index:read", "index:write",
 	// 远程执行（云电脑）：接活与看自己的任务分开 —— 能提交不等于能看别人的任务。
 	"exec:read", "exec:write",
+	// 连接通道（通信基础设施）：建立通道与在通道上干活分开授权。
+	"conn:read", "conn:write",
 	"keys:write",
 }
 

@@ -31,6 +31,7 @@ NCCR_PORT=8282 ./dist/ncc-registry          # → http://localhost:8282
 | **分享链接** | 把一条制品变成**临时下载地址**发出去：对方不用登录、不用装 CLI；可限次 / 限时 / 撤销 | `/api/shares*`、`/s/:token` |
 | **Agent 名片（Agent Share）** | 把**我设计好的 Agent** 点到点交给指定的人：一条链接既能把包**装到对方本机**，也能把**节点收进对方的连接表**。与云端同形（同一份 `ncc agent` 客户端直接可用）；token 只存 sha256 | `/api/agent-cards*`、`/a/:token` |
 | **云电脑（Remote Cloud Computer）** | 把本节点变成**替别人跑东西**的机器：登记沙箱环境后，HUR 包走 **wasm 沙箱**，OS 敏感任务（`docker build && docker push`）走 **process / 容器**。**默认只放行 wasm**，其余要运维显式开；每条任务都要 reason，日志/退出码/超时/截断如实回报，取消**进程组整组回收** | `/api/exec/kinds`、`/api/exec/runs*` |
+| **连接通道（`ncc conn`）** | 到某台 Cloud instance 的一条**会话**：目标机上一个工作目录 + TTL + 账本。上面能反复执行命令、**推/拉文件**（锁在工作目录里），并把这一批动作（`conn run` = 推文件 + 跑脚本）一次做完。**默认关**（`NCCR_CONN_ALLOW=1` 才开）、每个动作都要 reason、**过期与关闭分开说**；执行复用云电脑那套执行器 | `/api/conn/connections*` |
 | **节点管理（admin）** | 节点管理员管**用户 / 节点 / 服务**（禁用启停、重置密码、摘除、归档），每个动作都进审计 | `/api/admin/*` |
 | **多节点（master/worker）** | worker 注册 + 心跳上报本地目录；master 聚合目录、做能力路由、代理字节，还能把制品**分发**到 worker 并在下架时**回收** | `/api/cluster*` |
 | **打洞条件（P2P）** | 在**这台机器**上判断跨网可不可达：NAT 画像 + 与对端映射真实对打（0 字节）；可选开一个**只应答 STUN** 的可被打洞入口 | `/api/p2p/self`、`/api/p2p/check`、`/api/p2p/serve` |
@@ -410,6 +411,9 @@ ncc registry rm @alice/x --yes                                         # 下架 
 | `NCCR_P2P_SERVE` | `false` | 随服务开启**可被打洞入口**（一个 UDP socket，只应答 STUN Binding；默认关） |
 | `NCCR_P2P_STUN` | 内置多台 | STUN 列表（逗号分隔）—— 用自己的可达 STUN，NAT 画像与打洞都靠它 |
 | `NCCR_P2P_TURN` | 空 | 自托管 TURN 列表。**红线**：TURN 必须客户自托管 —— 云端托管面不进数据路径 |
+| `NCCR_CONN_ALLOW` | `false` | **是否开放连接通道（`ncc conn`）**。通道能跑任意命令、写文件 = 最高权限，所以**默认关**；未开时建连一律 403 |
+| `NCCR_CONN_DIR` | `<data>/conn` | 通道工作目录的根（每条通道一个子目录，文件面锁在里面） |
+| `NCCR_CONN_TTL` | `1h` | 通道默认有效期（建连时 `ttlSec` 可覆盖，单次上限 8h） |
 | `NCCR_CORS_ORIGINS` | 空 | 跨域白名单（逗号分隔，`*` 全放行） |
 
 > 约定：`NCCR_*` 与平台的 `NCC_*` 互不干扰，两套服务可以并排跑在同一台机器上。
@@ -420,7 +424,9 @@ ncc registry rm @alice/x --yes                                         # 下架 
 
 | 方法/路径 | 说明 |
 |---|---|
-| `GET /api/health` · `GET /api/meta` | 存活与本节点自述（角色 / 节点 id / 规模 / 控制台地址） || `GET /api/meta` 的 `kind` 与 `capabilities` | **节点声明自己的能力**（`node`；`registry` / `config` / `share` / `nodes` / `grants` / `access` / `cluster` / `admin` / `p2p` / `trace` / `kb` / `mem` / `ckpt`）。CLI / MCP 按这份清单放行命令 —— 声明了 `services` / `profile` 那天，同名命令在本节点上就直接可用 || `GET /api/registry/kinds` | 制品类型与数量 |
+| `GET /api/health` · `GET /api/meta` | 存活与本节点自述（角色 / 节点 id / 规模 / 控制台地址） |
+| `GET /api/meta` 的 `kind` 与 `capabilities` | **节点声明自己的能力**（`node`；`registry` / `config` / `share` / `nodes` / `grants` / `access` / `cluster` / `admin` / `p2p` / `trace` / `kb` / `mem` / `ckpt` / `store` / `index` / `exec` / `conn`）。CLI / MCP 按这份清单放行命令 —— 声明了 `services` / `profile` 那天，同名命令在本节点上就直接可用 |
+| `GET /api/registry/kinds` | 制品类型与数量 |
 | `GET /api/registry?q=&kind=&tag=&namespace=&page=&size=` | 目录检索（本节点权威） |
 | `GET /api/registry/<@ns/slug\|A-…>` | 制品详情 |
 | `GET /api/registry/<ref>/download` | 下载元数据（`url` / `sha256` / `size` / `via`） |
@@ -484,6 +490,8 @@ ncc registry rm @alice/x --yes                                         # 下架 
 | `GET /api/ckpt/:id/bytes` · `GET /api/ckpt/:id/lineage` · `DELETE /api/ckpt/:id` | 字节流（签名地址或可读凭据）/ 沿 `parent` 回溯血缘 / 删除（元数据 + 字节） |
 | `POST /api/ckpt/prune?ref=&keep=N` | 每个 subject 只留最新 N 个：其余标 `pruned`、删字节、**元数据留下**（历史不留无法解释的空洞） |
 | `POST /api/shares` · `GET /api/shares[?mine=1\|all=1]` · `DELETE /api/shares/:id` | 建 / 列 / 撤销分享链接（`all=1` 需管理员；只能撤自己的，管理员可撤任意） |
+| `POST/GET /api/conn/connections` · `GET/DELETE …/<id>` | 连接通道：建 / 列 / 看细节（**含账本**）/ 关闭（`?purge=1` 连工作目录一起删）。需 `NCCR_CONN_ALLOW=1` |
+| `POST …/<id>/exec` · `POST/GET …/<id>/files?path=<相对>` | 在通道上执行（`{cmd,reason,…}`，默认同步返回并带日志尾巴）/ 推或拉文件（锁在通道工作目录里） |
 
 打洞条件（P2P；判断面，**不搬运业务字节**，需登录）：
 

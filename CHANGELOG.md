@@ -15,6 +15,36 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Added · Connection channels (`ncc conn`): the communication layer
+
+A job (`/api/exec/runs`) answers “run one command”; a channel answers “**work on one machine for a
+stretch of time**”. A channel = a working directory on the target + a TTL + an audit trail, where you
+can run commands repeatedly and push / pull files.
+
+- Endpoints: `POST/GET /api/conn/connections`, `GET|DELETE /api/conn/connections/<id>`,
+  `POST …/<id>/exec`, `POST|GET …/<id>/files?path=<relative>`; capability `conn`, scopes
+  `conn:read|write`, audit actions `conn.open|exec|put|close`.
+- **The executor is not written twice**: `exec` on a channel reuses the `/api/exec/*` path
+  (`internal/execrun`: limits, env allow-list, whole process-group reaping, timeout, log truncation)
+  and is merely recorded with a `connId` — which is why `GET …/<id>` can answer “what has run on this
+  channel”. It returns **synchronously with the log tail attached** (half the use of a channel is
+  running a command and seeing what it said).
+- **Off by default**: `NCCR_CONN_ALLOW=1` is required (a channel can run arbitrary commands and write
+  files — the highest privilege); when disabled, opening one is a flat 403 and no bytes are accepted.
+  Related config: `NCCR_CONN_DIR` (default `<data>/conn`), `NCCR_CONN_TTL` (default 1h, max 8h).
+- **The file face is locked to the working directory**: relative paths only; `..`, absolute paths and
+  NUL bytes are a 400, and the joined path is re-checked against the root (`safeJoin`). Pushing returns
+  a `sha256`; pulling echoes the same digest in a response header.
+- **Expiry is derived, not a status flip**: `state = open | closed | expired` is computed from `Status`
+  + `ExpiresAt`. ⚠️ The first cut rewrote expired rows to `closed`, which made “expired” and “closed by
+  someone” indistinguishable (same 410, same state) — now told apart: `410 conn_expired` vs
+  `410 conn_closed`.
+- **Closing is not deleting**: after `close` the **ledger stays readable** (`GET …/<id>` no longer goes
+  through the usability guard, only an ownership check); deletion is a separate `?purge=1`.
+- At startup the node only **counts** expired channels and logs it (`staleConns`) — it no longer rewrites data.
+- Smoke: `scripts/conn-smoke.sh` (57 checks: default-off / file-face guards / session semantics /
+  digests / CLI end-to-end / closed vs expired).
+
 ### Added · Agent cards (Agent Share): hand the Agent you designed to one specific person
 
 Same shape as the cloud's `/api/agent-cards` — one `ncc agent` client works against this node with no

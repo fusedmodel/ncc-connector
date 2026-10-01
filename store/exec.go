@@ -24,9 +24,11 @@ type ExecRunInput struct {
 	PackageVersion string
 	PackageSHA     string
 	WorkDir        string
-	LogPath        string
-	Reason         string
-	TimeoutSec     int64
+	// ConnID 非空 = 这条任务属于某条连接通道（会话层），见 `model.Conn`。
+	ConnID     string
+	LogPath    string
+	Reason     string
+	TimeoutSec int64
 }
 
 func (s *Store) CreateExecRun(in ExecRunInput) (*model.ExecRun, error) {
@@ -34,7 +36,7 @@ func (s *Store) CreateExecRun(in ExecRunInput) (*model.ExecRun, error) {
 		ID: NewID("ER"), OwnerID: in.OwnerID, RequestedBy: in.RequestedBy,
 		Engine: in.Engine, Kind: in.Kind, Spec: in.Spec, Image: in.Image,
 		PackageID: in.PackageID, PackageVersion: in.PackageVersion, PackageSHA: in.PackageSHA,
-		WorkDir: in.WorkDir, LogPath: in.LogPath, Reason: in.Reason, TimeoutSec: in.TimeoutSec,
+		WorkDir: in.WorkDir, ConnID: in.ConnID, LogPath: in.LogPath, Reason: in.Reason, TimeoutSec: in.TimeoutSec,
 		Status: model.ExecQueued,
 	}
 	if err := s.DB.Create(r).Error; err != nil {

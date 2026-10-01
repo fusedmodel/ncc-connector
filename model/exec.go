@@ -60,6 +60,9 @@ type ExecRun struct {
 	PackageSHA     string `gorm:"not null;default:''"`
 	// WorkDir 这次任务的工作目录（每次一个，跑完留着；日志在里面）
 	WorkDir string `gorm:"not null;default:''"`
+	// ConnID 非空 = 这次执行发生在那条**连接通道**上（`/api/conn/*`）。
+	// 通道是会话层、任务是执行层：通道上的 exec 也落成一条 ExecRun，好让"这段通道上跑过什么"可查。
+	ConnID  string `gorm:"not null;default:'';index"`
 	LogPath string `gorm:"not null;default:''"`
 	// Reason 提交理由（必填）：审计与排障都靠它
 	Reason string `gorm:"not null;default:''"`

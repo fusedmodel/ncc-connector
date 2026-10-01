@@ -39,6 +39,7 @@ bytes to a third party.
 | **Share links** | Turn an artifact into a **temporary download address**: the recipient needs no account and no CLI; limited uses, limited time, revocable | `/api/shares*`, `/s/:token` |
 | **Agent cards (Agent Share)** | Hand **the Agent you designed** to one specific person, point-to-point: a single link both **installs the package** on their machine and **adds the node to their link table**. Same shape as the cloud (one `ncc agent` client works against either); tokens are stored as sha256 only | `/api/agent-cards*`, `/a/:token` |
 | **Remote Cloud Computer** | Turn this node into a machine that **runs things for others**: HUR packages go through the **wasm sandbox**, OS-sensitive jobs (`docker build && docker push`) through **process / container**. **Only wasm is allowed by default**; the rest is opt-in. Every job needs a `reason`; logs, exit code, timeout and truncation are reported honestly, and cancel kills the whole **process group** | `/api/exec/kinds`, `/api/exec/runs*` |
+| **Connection channels (`ncc conn`)** | A **session** onto a cloud instance: a working directory on the target plus a TTL and a ledger. Run commands repeatedly, **push / pull files** (locked to the working directory), and do a whole batch in one go (`conn run` = push files + run a script). **Off by default** (`NCCR_CONN_ALLOW=1` to enable), every action needs a reason, **closed and expired are told apart**; execution reuses the cloud-computer executor | `/api/conn/connections*` |
 | **Node administration (admin)** | A node administrator manages **users / nodes / services** (disable, enable, reset passwords, remove, archive); every action is audited | `/api/admin/*` |
 | **Multi-node (master/worker)** | Workers register and heartbeat their local directory; the master aggregates, routes by capability, proxies bytes, and can **replicate** artifacts to workers and **revoke** them on removal | `/api/cluster*` |
 | **Hole-punching readiness (P2P)** | Decide on **this machine** whether cross-network reachability is possible: NAT profile plus a real (zero-byte) probe against a peer's mapping; optionally expose a **STUN-answer-only** hole-punchable entry point | `/api/p2p/self`, `/api/p2p/check`, `/api/p2p/serve` |
@@ -532,6 +533,9 @@ private deployments: bytes on NAS or a dedicated disk, the database on local SSD
 | `NCCR_P2P_SERVE` | `false` | Start a **hole-punchable entry point** with the service (one UDP socket that answers STUN Binding only; off by default) |
 | `NCCR_P2P_STUN` | several built in | STUN list (comma-separated) — use one you can reach; NAT profiling and punching rely on it |
 | `NCCR_P2P_TURN` | empty | Self-hosted TURN list. **Hard rule**: TURN must be hosted by the operator — the hosted layer stays out of the data path |
+| `NCCR_CONN_ALLOW` | `false` | **Whether connection channels (`ncc conn`) are open.** A channel can run arbitrary commands and write files — the highest privilege — so this is **off by default**; opening one is a flat 403 otherwise |
+| `NCCR_CONN_DIR` | `<data>/conn` | Root of channel working directories (one per channel; the file face is locked inside it) |
+| `NCCR_CONN_TTL` | `1h` | Default channel TTL (`ttlSec` at creation can override it; hard cap 8h) |
 | `NCCR_CORS_ORIGINS` | empty | CORS allow-list (comma-separated, `*` allows everything) |
 
 > Convention: `NCCR_*` and the platform's `NCC_*` never interfere, so both services can run side by side
@@ -618,6 +622,8 @@ Requires login (`Authorization: Bearer <JWT or ncc_ API key>`):
 | `GET /api/ckpt/:id/lineage` · `DELETE /api/ckpt/:id` | Walk the `parent` chain back to the start / delete a checkpoint (metadata **and** bytes) |
 | `POST /api/ckpt/prune?ref=&keep=N` | Keep the newest N per subject: mark the rest `pruned`, delete their bytes, **keep the metadata** (so history has no unexplained holes) |
 | `POST /api/shares` · `GET /api/shares[?mine=1\|all=1]` · `DELETE /api/shares/:id` | Create / list / revoke share links (`all=1` requires an admin; you can only revoke your own, an admin can revoke any) |
+| `POST/GET /api/conn/connections` · `GET/DELETE …/<id>` | Connection channels: open / list / inspect (ledger included) / close (`?purge=1` also deletes the working directory). Needs `NCCR_CONN_ALLOW=1` |
+| `POST …/<id>/exec` · `POST/GET …/<id>/files?path=<relative>` | Run a command on the channel (`{cmd,reason,…}`, sync by default with the log tail) / push or pull a file (locked to the working directory) |
 
 Hole-punching readiness (P2P; a decision surface that **never carries business bytes**; requires login):
 

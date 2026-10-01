@@ -71,6 +71,11 @@ const (
 	// 远程执行（Remote Cloud Computer）：谁让这台机器跑了什么，必须留账。
 	ActExecSubmit = "exec.submit"
 	ActExecCancel = "exec.cancel"
+	// 连接通道（通信基础设施）：建连 / 通道上执行 / 推文件 / 关连，四个动作各自留账。
+	ActConnOpen  = "conn.open"
+	ActConnExec  = "conn.exec"
+	ActConnPut   = "conn.put"
+	ActConnClose = "conn.close"
 )
 
 // AdminServiceArtifactKinds 「服务」在制品侧的取值：kind=api 的条目就是对外可调用的服务接口。
