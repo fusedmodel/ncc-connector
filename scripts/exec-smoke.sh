@@ -155,7 +155,7 @@ PKG_DIR="${TMP}/pkg"
 "${CLI}" hur init --kind agent --name "Cloud Demo" --dir "${PKG_DIR}" >/dev/null
 "${CLI}" hur build "${PKG_DIR}" >/dev/null
 "${CLI}" hur pack "${PKG_DIR}" >/dev/null   # 产包（build 只定 lock；产包才出 dist/*.hur.gz）
-HUR_FILE="$(find "${PKG_DIR}/dist" -maxdepth 1 -name '*.hur*' -type f 2>/dev/null | head -1)"
+HUR_FILE="$(find "${PKG_DIR}/dist" -maxdepth 1 -type f \( -name '*.hur' -o -name '*.hur.gz' \) 2>/dev/null | head -1)"
 [[ -f "${HUR_FILE}" ]] && good "本地已产包（$(basename "${HUR_FILE}")）" || { bad "产包失败"; exit 1; }
 RUN2="$(curl -sS -X POST "${BASE}/api/exec/runs?engine=wasm&reason=%E5%86%92%E7%83%9F%E5%8C%85" \
   -H "Authorization: Bearer ${TK}" -H 'Content-Type: application/octet-stream' --data-binary @"${HUR_FILE}")"
