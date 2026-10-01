@@ -409,7 +409,7 @@ ncc registry rm @alice/x --yes                                         # 下架 
 | `NCCR_CONSOLE` | `true` | 是否托管内置 Web 控制台 |
 | `NCCR_P2P_SERVE` | `false` | 随服务开启**可被打洞入口**（一个 UDP socket，只应答 STUN Binding；默认关） |
 | `NCCR_P2P_STUN` | 内置多台 | STUN 列表（逗号分隔）—— 用自己的可达 STUN，NAT 画像与打洞都靠它 |
-| `NCCR_P2P_TURN` | 空 | 自托管 TURN 列表。**红线**：TURN 必须客户自托管，NCC 不中转业务字节 |
+| `NCCR_P2P_TURN` | 空 | 自托管 TURN 列表。**红线**：TURN 必须客户自托管 —— 云端托管面不进数据路径 |
 | `NCCR_CORS_ORIGINS` | 空 | 跨域白名单（逗号分隔，`*` 全放行） |
 
 > 约定：`NCCR_*` 与平台的 `NCC_*` 互不干扰，两套服务可以并排跑在同一台机器上。

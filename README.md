@@ -531,7 +531,7 @@ private deployments: bytes on NAS or a dedicated disk, the database on local SSD
 | `NCCR_CONSOLE` | `true` | Whether to serve the built-in web console |
 | `NCCR_P2P_SERVE` | `false` | Start a **hole-punchable entry point** with the service (one UDP socket that answers STUN Binding only; off by default) |
 | `NCCR_P2P_STUN` | several built in | STUN list (comma-separated) — use one you can reach; NAT profiling and punching rely on it |
-| `NCCR_P2P_TURN` | empty | Self-hosted TURN list. **Hard rule**: TURN must be hosted by the operator; we never relay traffic |
+| `NCCR_P2P_TURN` | empty | Self-hosted TURN list. **Hard rule**: TURN must be hosted by the operator — the hosted layer stays out of the data path |
 | `NCCR_CORS_ORIGINS` | empty | CORS allow-list (comma-separated, `*` allows everything) |
 
 > Convention: `NCCR_*` and the platform's `NCC_*` never interfere, so both services can run side by side
