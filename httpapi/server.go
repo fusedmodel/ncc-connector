@@ -332,6 +332,22 @@ func NewServer(cfg *config.Config, st *store.Store, blob storage.Storage) (*Serv
 	ex.GET("/runs/:id/log", s.execRunLog)
 	ex.DELETE("/runs/:id", s.execRunAction)
 
+	// 反馈（跨 Agent / 跨用户）：说一句关于某个东西的话（制品 / 节点 / 服务 /
+	// 一次运行 / 一个词条），带不带分都行。
+	// 读接口不挂作用域（可见性折在查询里：匿名只看得到 public）；写要
+	// `feedback:write` —— 「说过什么」与「能替别人处置」是两件事。
+	fb := api.Group("/feedback")
+	fb.GET("/kinds", s.fbKinds)
+	fb.GET("/summary", s.summaryFeedback)
+	fb.GET("/inbox", s.listFeedback)
+	fb.GET("", s.listFeedback)
+	fb.GET("/", s.listFeedback)
+	fb.POST("", requireScope("feedback:write"), s.createFeedback)
+	fb.POST("/", requireScope("feedback:write"), s.createFeedback)
+	fb.POST("/:id/reply", requireScope("feedback:write"), s.createFeedback)
+	fb.PATCH("/:id", requireScope("feedback:write"), s.patchFeedback)
+	fb.GET("/:id", s.getFeedback)
+
 	// 节点治理面：用户 / 节点 / 服务 的查看与处理（管理员或 admin key/secret）。
 	// 单独一道门（requireAdmin），不挂在普通作用域体系上 —— 治理权与资产权是两回事。
 	adm := api.Group("/admin")
@@ -468,6 +484,10 @@ func (s *Server) meta(c *gin.Context) {
 			// 连接通道（`ncc conn`）：**会话面**的工作目录 + 文件推拉 + 账本。
 			// 同样是照不照放行由运维定（NCCR_CONN_ALLOW，默认关）—— 声明的是"有这道门"。
 			"conn",
+			// 反馈（跨 Agent / 跨用户）：说一句关于某个东西的话（制品 / 节点 / 服务 /
+			// 一次运行 / 一个词条）。读写分开授权：写要 `feedback:write`，
+			// 可见性默认私有（作者不说 public 就只有作者与目标拥有者看得到）。
+			"feedback",
 		},
 		"counts": gin.H{
 			"artifacts": artifacts, "hostedNodes": nodes, "users": users,

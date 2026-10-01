@@ -114,6 +114,8 @@ func Open(path string) (*Store, error) {
 		&model.Collection{}, &model.Record{}, &model.RecordRevision{}, &model.RecordIndex{},
 		// NCC Index：平台推来的索引副本（内网本地检索用；幂等键 = 平台的索引 id）
 		&model.IndexEntry{},
+		// NCC Feedback：跨 Agent / 跨用户的反馈（只追加；处置状态由目标拥有者改）
+		&model.Feedback{},
 	); err != nil {
 		return nil, fmt.Errorf("迁移表结构失败: %w", err)
 	}

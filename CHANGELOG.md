@@ -15,6 +15,23 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### 新增 · NCC Feedback（节点侧）：跨 Agent / 跨用户的反馈
+
+与云端（ncc-platform）**同一份形状、同一套规矩**：同一份 `ncc feedback` 客户端把目标切到本节点就能用。
+
+- 表 `feedback`（**只追加**：没有 Update 这条路）；端点 `/api/feedback*`：
+  `POST`（写 / 回复）、`GET`（列表，可见性折在查询里）、`/inbox`、`/:id`（含回复）、
+  `/:id/reply`、`PATCH /:id`（**只改处置状态**，只有目标拥有者）、`/summary`、`/kinds`（离线词表）。
+- 作用域 `feedback:read` / `feedback:write`（新增，已在 `DefaultScopes` 与 `AllScopes` 里）；
+  `/api/meta` 声明 `feedback` 能力。
+- **归属由服务端解析**（制品 → 命名空间拥有者；节点/服务 → `HostedNode.OwnerID`；运行 → 轨迹归属）；
+  解析不出来**不是错误**：照记，但在响应里写清 `resolved=false` 与原因（那时私有反馈只有作者看得到）。
+- **回复继承父的可见性**：一段私有对话不会因为有人回一句就变公开。
+- `relay` 的幂等键 `(origin, origin_id)`：本地反馈的 origin 是空串，所以这里只是**普通复合索引**，
+  幂等在 handler 里查着判 —— 用唯一索引会把所有本地反馈撞成一条（踩过，见下方）。
+
+验证：`bash scripts/feedback-smoke.sh` **71/71**。
+
 ### Added · Connection channels (`ncc conn`): the communication layer
 
 A job (`/api/exec/runs`) answers “run one command”; a channel answers “**work on one machine for a

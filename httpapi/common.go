@@ -196,6 +196,8 @@ var DefaultScopes = []string{
 	"kb:read", "kb:write", "mem:read", "mem:write", "ckpt:read", "ckpt:write",
 	// 通用记录仓：一个作用域对**所有集合**生效（集合级的边界靠命名空间归属与认证，不靠作用域爆炸）
 	"store:read", "store:write",
+	// 反馈：自己说一句（写）与看别人的话（读）分开 —— 说得出口不等于能替别人处置。
+	"feedback:read", "feedback:write",
 	"p2p:read", "p2p:write",
 }
 
@@ -225,6 +227,8 @@ var AllScopes = []string{
 	"trace:read", "trace:write", "trace:label",
 	"kb:read", "kb:write", "mem:read", "mem:write", "ckpt:read", "ckpt:write",
 	"store:read", "store:write",
+	// 反馈（跨 Agent / 跨用户）：说得出口（写）与看别人的话（读）分开授权。
+	"feedback:read", "feedback:write",
 	"p2p:read", "p2p:write",
 	"index:read", "index:write",
 	// 远程执行（云电脑）：接活与看自己的任务分开 —— 能提交不等于能看别人的任务。
