@@ -68,6 +68,9 @@ const (
 	ActShareCreate    = "share.create"
 	ActShareRevoke    = "share.revoke"
 	ActKeyRotate      = "admin.key.rotate"
+	// 远程执行（Remote Cloud Computer）：谁让这台机器跑了什么，必须留账。
+	ActExecSubmit = "exec.submit"
+	ActExecCancel = "exec.cancel"
 )
 
 // AdminServiceArtifactKinds 「服务」在制品侧的取值：kind=api 的条目就是对外可调用的服务接口。

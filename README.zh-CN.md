@@ -30,6 +30,7 @@ NCCR_PORT=8282 ./dist/ncc-registry          # → http://localhost:8282
 | **配置托管** | 团队的网络 / 基础设施 / Agent 配置作为一等资源：版本历史、回滚、按环境成组拉取、敏感值静态加密 | `/api/configs*` |
 | **分享链接** | 把一条制品变成**临时下载地址**发出去：对方不用登录、不用装 CLI；可限次 / 限时 / 撤销 | `/api/shares*`、`/s/:token` |
 | **Agent 名片（Agent Share）** | 把**我设计好的 Agent** 点到点交给指定的人：一条链接既能把包**装到对方本机**，也能把**节点收进对方的连接表**。与云端同形（同一份 `ncc agent` 客户端直接可用）；token 只存 sha256 | `/api/agent-cards*`、`/a/:token` |
+| **云电脑（Remote Cloud Computer）** | 把本节点变成**替别人跑东西**的机器：登记沙箱环境后，HUR 包走 **wasm 沙箱**，OS 敏感任务（`docker build && docker push`）走 **process / 容器**。**默认只放行 wasm**，其余要运维显式开；每条任务都要 reason，日志/退出码/超时/截断如实回报，取消**进程组整组回收** | `/api/exec/kinds`、`/api/exec/runs*` |
 | **节点管理（admin）** | 节点管理员管**用户 / 节点 / 服务**（禁用启停、重置密码、摘除、归档），每个动作都进审计 | `/api/admin/*` |
 | **多节点（master/worker）** | worker 注册 + 心跳上报本地目录；master 聚合目录、做能力路由、代理字节，还能把制品**分发**到 worker 并在下架时**回收** | `/api/cluster*` |
 | **打洞条件（P2P）** | 在**这台机器**上判断跨网可不可达：NAT 画像 + 与对端映射真实对打（0 字节）；可选开一个**只应答 STUN** 的可被打洞入口 | `/api/p2p/self`、`/api/p2p/check`、`/api/p2p/serve` |

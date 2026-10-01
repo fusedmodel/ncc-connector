@@ -95,6 +95,8 @@ func Open(path string) (*Store, error) {
 		&model.Artifact{}, &model.HostedNode{}, &model.NodeLink{},
 		// NCC Agent Share：点到点的 Agent 名片（包字节在 blob，token 只存 sha256）
 		&model.AgentCard{},
+		// 远程执行（云电脑）：一次任务一行，日志落在工作目录里
+		&model.ExecRun{},
 		&model.ClusterWorker{}, &model.ArtifactAdvert{}, &model.ReplicaTarget{},
 		&model.Grant{}, &model.AccessTicket{},
 		// NCC Config：托管配置（条目 + 版本历史）

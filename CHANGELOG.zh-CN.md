@@ -33,6 +33,27 @@
   刚 accept 完、紧接着下载就 410，等于把已经拿到名额的人关在门外（冒烟里钉了这条）。
 - 冒烟：`scripts/agent-share-smoke.sh`（37 项，含“库里查不到 token 明文”）。
 
+### 新增 · 云电脑（Remote Cloud Computer）：把本节点变成能接活的机器
+
+一台云电脑 = 一台能替别人跑东西的 ncc 节点。调用方用 `ip/port/key` 把它登记成沙箱环境，
+然后把 HUR 包或 OS 敏感任务丢过来跑。
+
+- 接口：`GET /api/exec/kinds`（公开：每个引擎 `enabled`+`why`、runner 就绪、限额、标签）、
+  `POST /api/exec/runs`（JSON=命令 / 原样字节=.hur）、`GET /api/exec/runs[/:id][/log]`、
+  `DELETE /api/exec/runs/:id`（取消 / `?purge=1` 删记录与工作目录）。
+- **默认只放行 `wasm`**（内置 HUR 沙箱）；`process`（在本机跑命令：docker build / 编译）与
+  `container`（在镜像里跑）必须运维显式开 `NCCR_EXEC_ALLOW` —— 没放行的引擎**连字节都不收**（403）。
+  引擎名写错**启动就报错**，不静默忽略。
+- 每条任务 **reason 必填**（审计账本要能回答「谁让这台机器干了什么、为什么」）。
+- 子进程环境变量是**白名单**（PATH/HOME/TMPDIR/LANG + `NCC_EXEC_*`）—— 绝不继承服务端
+  env（那里面有 JWT secret、库路径）。
+- 超时 / 取消 / 截断如实记：`timeout` 是独立状态；日志超上限继续跑但 `logTruncated=true`；
+  取消走**进程组整组回收**（`sh -c "docker build…"` 被杀之后 docker 客户端不会还活着），
+  且一旦 `canceled` 就不允许被后到的完成事件改回 `succeeded`。
+- 节点在 `/api/meta` 的 node 里以**自证**报 `run:wasm/process/container`（由本机事实推导）
+  → `ncc nodes discover --can run:container` 挑到的是真的能跑的机器。
+- 冒烟：`scripts/exec-smoke.sh`（54 项）。
+
 ### 新增 · 索引（Index）：接住平台推来的副本，并能就地匹配
 
 平台是索引的**权威**，节点是**副本** —— 内网不出网也能用一句需求找人。

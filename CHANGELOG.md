@@ -33,6 +33,28 @@ client-side change. Accepting can be half: install the package, or only add the 
   locked out the very person who had already claimed a slot (pinned by the smoke test).
 - Smoke: `scripts/agent-share-smoke.sh` (37 checks, including “no plaintext token in the database”).
 
+### Added · Remote Cloud Computer: a node that runs things for others
+
+A cloud computer is an ncc node that accepts work. Callers register it as a sandbox environment with
+`ip/port/key`, then hand it HUR packages or OS-sensitive jobs.
+
+- Endpoints: `GET /api/exec/kinds` (public: per-engine `enabled`+`why`, runner readiness, limits,
+  tags), `POST /api/exec/runs` (JSON = command / raw bytes = `.hur`), `GET /api/exec/runs[/:id][/log]`,
+  `DELETE /api/exec/runs/:id` (cancel, or `?purge=1` to drop record + work dir).
+- **Only `wasm` is allowed by default**; `process` (commands on the host: docker build, compilers)
+  and `container` (commands inside an image) require explicit opt-in via `NCCR_EXEC_ALLOW` — a
+  non-allowed engine is refused **before any bytes are read** (403). A typo in an engine name fails
+  at startup instead of being silently ignored.
+- Every job requires a **`reason`** (the ledger must answer who asked this machine to do what, and why).
+- The child environment is a **whitelist** (PATH/HOME/TMPDIR/LANG + `NCC_EXEC_*`) — the server env is
+  never inherited (it holds the JWT secret and DB paths).
+- Timeout, cancel and truncation are recorded honestly: `timeout` is its own status; exceeding the log
+  cap keeps running but sets `logTruncated=true`; cancel kills the whole **process group**, and a
+  `canceled` row can never be flipped back to `succeeded` by a late completion event.
+- The node self-attests `run:wasm/process/container` in `/api/meta`'s node (derived from local facts),
+  so `ncc nodes discover --can run:container` finds machines that really can run it.
+- Smoke: `scripts/exec-smoke.sh` (54 checks).
+
 ### Added · Index: hold the platform's copies and match in place
 
 The platform is **authoritative** for the index; a node holds a **copy** — so an isolated intranet

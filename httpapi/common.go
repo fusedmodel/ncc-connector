@@ -227,6 +227,8 @@ var AllScopes = []string{
 	"store:read", "store:write",
 	"p2p:read", "p2p:write",
 	"index:read", "index:write",
+	// 远程执行（云电脑）：接活与看自己的任务分开 —— 能提交不等于能看别人的任务。
+	"exec:read", "exec:write",
 	"keys:write",
 }
 
@@ -457,11 +459,31 @@ func workerJSON(w *model.ClusterWorker, ttl time.Duration) gin.H {
 
 // selfNodeJSON 本节点的身份（集群与 /api/meta 都用它）。
 func (s *Server) selfNodeJSON(artifacts, nodes, users int64) gin.H {
+	// 远程执行的引擎是**本机事实**（runner 在不在、运维放行了什么）——以自证的形式
+	// 报出去。这样「按能力挑机器」（`ncc nodes discover --can run:remote`）挑到的
+	// 是**真的能跑**的机器，而不是"标签上写着能跑"的机器。
+	offers := []string{}
+	verified := []string{}
+	cap := s.Exec()
+	execOn := false
+	for _, k := range cap.Kinds {
+		if k.Enabled {
+			execOn = true
+			verified = append(verified, "run:"+k.ID)
+		}
+	}
+	if execOn {
+		offers = append(offers, "run:remote") // 本机接活
+	}
 	return gin.H{
 		"id": s.Cfg.NodeID, "name": s.Cfg.NodeName, "url": s.Cfg.PublicURL,
 		"role": s.Cfg.Role, "version": Version, "region": s.Cfg.NodeRegion,
 		"artifacts": artifacts, "nodes": nodes, "users": users,
 		"online": true, "lastSeen": time.Now(),
+		// 提供能力：声明 + 自证（自证 = 由本机硬事实推导，见 model.ParseOfferQuery）
+		"capabilities":         model.NormalizeOffers(offers),
+		"capabilitiesVerified": model.NormalizeOffers(verified),
+		"tags":                 cap.Tags,
 	}
 }
 

@@ -14,6 +14,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	// 引擎词表只有一份（model.ExecEngines）：配置里写错的引擎名要在**启动时**报错，
+	// 不能静默忽略 —— 静默忽略会让运维以为放行了、其实没放行。
+	"github.com/fusedmodel/ncc-registry/model"
 )
 
 // 节点角色。
@@ -62,6 +66,22 @@ type Config struct {
 	P2PSTUN  []string
 	P2PTURN  []string
 	P2PServe bool // 开一个 UDP 入口应答打洞请求（等别人打进来）
+
+	// 远程执行（Remote Cloud Computer / 云电脑）—— 让别人把 HUR 包或 OS 敏感任务丢到
+	// 这台机器上跑。
+	//
+	// ⚠️ **默认只放行 `wasm`**（ncc 内置沙箱，限额由策略算）。`process` / `container`
+	// 是"真的在这台机器上跑别人的命令"，必须运维显式打开（NCCR_EXEC_ALLOW=wasm,container）
+	// —— 默认打开它会是一台开放的跳板机，不是云电脑。
+	ExecAllow     []string      // NCCR_EXEC_ALLOW（默认 wasm）
+	ExecRunner    string        // NCCR_EXEC_RUNNER：跑 wasm 的 HUR 运行时（默认从 PATH 找 ncc）
+	ExecShell     string        // NCCR_EXEC_SHELL（默认 sh）
+	ExecDocker    string        // NCCR_EXEC_DOCKER（默认 docker）
+	ExecDir       string        // NCCR_EXEC_DIR（默认 <data>/exec）
+	ExecTimeout   time.Duration // NCCR_EXEC_TIMEOUT：单个任务墙上限（默认 10m）
+	ExecMaxOutput int64         // NCCR_EXEC_MAX_OUTPUT：单个任务日志上限字节（默认 1MB）
+	ExecImages    []string      // NCCR_EXEC_IMAGES：container 引擎允许的镜像（空 = 不限制；只放行列表内的）
+	ExecTags      []string      // NCCR_EXEC_TAGS：这台机器的标签（hur / gpu / os…），供「按标签挑节点」
 
 	CORSOrigins string
 }
@@ -191,6 +211,31 @@ func Load() (*Config, error) {
 		P2PTURN:  envList("NCCR_P2P_TURN"),
 		P2PServe: envBool("NCCR_P2P_SERVE", false),
 	}
+
+	// 远程执行：目录与放行清单。放行清单里的引擎必须都是认识的（写错不让启动，
+	// 而不是静默忽略 —— 静默忽略会让运维以为打开了、其实没打开，或者以为关着的。
+	execDir, err := resolveDir(dataDir, envOr("NCCR_EXEC_DIR", "exec"))
+	if err != nil {
+		return nil, fmt.Errorf("创建执行目录失败: %w", err)
+	}
+	c.ExecDir = execDir
+	c.ExecAllow = envList("NCCR_EXEC_ALLOW")
+	if len(c.ExecAllow) == 0 {
+		c.ExecAllow = []string{"wasm"}
+	}
+	for _, e := range c.ExecAllow {
+		if !model.ValidExecEngine(e) {
+			return nil, fmt.Errorf("NCCR_EXEC_ALLOW 里有不认识的引擎 %q（可选：%s）",
+				e, strings.Join(model.ExecEngines, "/"))
+		}
+	}
+	c.ExecRunner = strings.TrimSpace(os.Getenv("NCCR_EXEC_RUNNER"))
+	c.ExecShell = envOr("NCCR_EXEC_SHELL", "sh")
+	c.ExecDocker = envOr("NCCR_EXEC_DOCKER", "docker")
+	c.ExecTimeout = envDur("NCCR_EXEC_TIMEOUT", 10*time.Minute)
+	c.ExecMaxOutput = int64(envInt("NCCR_EXEC_MAX_OUTPUT", 1<<20))
+	c.ExecImages = envList("NCCR_EXEC_IMAGES")
+	c.ExecTags = envList("NCCR_EXEC_TAGS")
 
 	// 身份与密钥：缺省落盘，保证重启后不变。
 	c.NodeID = persistentSecret(c.NodeID, filepath.Join(dataDir, "node-id"), "ND", 12)
