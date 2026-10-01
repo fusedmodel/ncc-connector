@@ -93,6 +93,8 @@ func Open(path string) (*Store, error) {
 	if err := db.AutoMigrate(
 		&model.User{}, &model.Namespace{}, &model.NsMember{}, &model.ApiKey{},
 		&model.Artifact{}, &model.HostedNode{}, &model.NodeLink{},
+		// NCC Agent Share：点到点的 Agent 名片（包字节在 blob，token 只存 sha256）
+		&model.AgentCard{},
 		&model.ClusterWorker{}, &model.ArtifactAdvert{}, &model.ReplicaTarget{},
 		&model.Grant{}, &model.AccessTicket{},
 		// NCC Config：托管配置（条目 + 版本历史）

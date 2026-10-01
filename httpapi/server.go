@@ -289,6 +289,23 @@ func NewServer(cfg *config.Config, st *store.Store, blob storage.Storage) (*Serv
 	r.GET("/s/:token", s.sharePage)
 	r.GET("/s/:token/raw", s.shareRaw)
 
+	// NCC Agent Share：把「我设计好的 Agent」点到点交给指定的人（包 + 可选节点）。
+	// **与云端同形**：同一份 `ncc agent` 客户端把目标切到本节点就能用，客户端一行不用改。
+	// 只有一处刻意不同：token 按本仓规矩只存 sha256（所以列表里回不出可点的链接）。
+	// 读接口不挂作用域：token 本身就是秘密；写接口要登录（与会话同规矩）。
+	cards := api.Group("/agent-cards")
+	cards.GET("", s.listAgentCards)
+	cards.GET("/", s.listAgentCards)
+	cards.POST("", requireAuth(), s.createAgentCard)
+	cards.POST("/", requireAuth(), s.createAgentCard)
+	cards.GET("/:token", s.getAgentCard)
+	cards.GET("/:token/blob", s.downloadAgentCardBlob)
+	cards.POST("/:token/accept", requireAuth(), s.acceptAgentCard)
+	cards.DELETE("/:token", s.deleteAgentCard)
+	// 名片的落地页（人可读；设了口令先解锁）：与 /s/<token> 同一脾气 —— 拿到链接的人才看得到。
+	r.GET("/a/:token", s.renderCardPage)
+	r.POST("/a/:token", s.unlockCardPage)
+
 	// 节点治理面：用户 / 节点 / 服务 的查看与处理（管理员或 admin key/secret）。
 	// 单独一道门（requireAdmin），不挂在普通作用域体系上 —— 治理权与资产权是两回事。
 	adm := api.Group("/admin")

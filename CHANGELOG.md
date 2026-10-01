@@ -15,6 +15,24 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Added · Agent cards (Agent Share): hand the Agent you designed to one specific person
+
+Same shape as the cloud's `/api/agent-cards` — one `ncc agent` client works against this node with no
+client-side change. Accepting can be half: install the package, or only add the node to your link table.
+
+- Endpoints: `POST/GET /api/agent-cards`, `GET /api/agent-cards/<token>[/blob]`, `POST …/accept`,
+  `DELETE /api/agent-cards/<token>` (revoke), plus the human page `GET|POST /a/<token>` (noindex).
+- **This repo is stricter**: the `token` is stored as **sha256 only** (same rule as share links and
+  access tickets); the plaintext exists once, at creation. Lists therefore cannot hand back a clickable
+  link — they say so honestly instead of inventing a dead address.
+- Bytes live in `s.Blob` (`agent-cards/<id>.hur`); both `sha256` and the package's `hur.json` are
+  computed/read **from the received bytes**, and the recipient only installs after verifying the digest.
+- Revoke = **mark revoked + delete bytes** (the row stays so the author sees a revoked card in
+  `ncc agent ls`, and the recipient gets a clear 410 revoked instead of a vague 404).
+- Trap worth remembering: **an exhausted quota must only gate `accept`** — gating reads/downloads too
+  locked out the very person who had already claimed a slot (pinned by the smoke test).
+- Smoke: `scripts/agent-share-smoke.sh` (37 checks, including “no plaintext token in the database”).
+
 ### Added · Index: hold the platform's copies and match in place
 
 The platform is **authoritative** for the index; a node holds a **copy** — so an isolated intranet

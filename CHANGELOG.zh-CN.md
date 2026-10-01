@@ -16,6 +16,23 @@
 
 ## [未发布]
 
+### 新增 · Agent 名片（Agent Share）：把「我设计好的 Agent」点到点交给指定的人
+
+与云端的 `/api/agent-cards` **同形** —— 同一份 `ncc agent` 客户端把目标切到本节点就能用，客户端一行不用改。
+接受的 Agent 可以只要一半：把包**装到本机**，或只把节点**收进连接表**。
+
+- 接口：`POST/GET /api/agent-cards`、`GET /api/agent-cards/<token>[/blob]`、`POST …/accept`、
+  `DELETE /api/agent-cards/<token>`（撤销），人读落地页 `GET|POST /a/<token>`（noindex）。
+- **本仓规矩更保守**：`token` **只存 sha256**（与分享链接、接入票据一致），明文只在创建那一次回显；
+  因此列表里回不出可点的链接 —— 如实给 hint，而不是编一个打不开的地址。
+- 字节住 `s.Blob`（`agent-cards/<id>.hur`）；包内 `hur.json` 与 `sha256` 都由服务端**从收到的字节**
+  算/读（不信客户端报的元信息），接受方核对指纹通过才装。
+- 撤销 = **标记 revoked + 删字节**（记录留着：作者在 `ncc agent ls` 里看得到「已撤销」，
+  对方点开得到 410 revoked 而不是含糊的 404）。
+- ⚠️ 踩过的坑：**名额用完只该拦 `accept`** —— 一开始读名片 / 取字节也拦，结果 `--uses 1` 的名片
+  刚 accept 完、紧接着下载就 410，等于把已经拿到名额的人关在门外（冒烟里钉了这条）。
+- 冒烟：`scripts/agent-share-smoke.sh`（37 项，含“库里查不到 token 明文”）。
+
 ### 新增 · 索引（Index）：接住平台推来的副本，并能就地匹配
 
 平台是索引的**权威**，节点是**副本** —— 内网不出网也能用一句需求找人。
