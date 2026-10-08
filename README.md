@@ -15,6 +15,12 @@ go build -o dist/ncc-registry ./cmd/ncc-registry
 NCCR_PORT=8282 ./dist/ncc-registry          # → http://localhost:8282
 ```
 
+> **Rust rewrite (in progress):** [`../ncc-rs/`](../ncc-rs/) re-implements this node with
+> axum + tokio + sqlx. It opens the **existing** `ncc-registry.db` directly (missing columns are
+> added on start) and interoperates with this Go build in both directions — same tokens, same
+> password hashes, same API shapes, same `enc:v1:` secret box. Migrated endpoints and what is
+> still pending: [`../ncc-rs/README.md`](../ncc-rs/README.md).
+
 It is also an **importable Go library** (`module github.com/fusedmodel/ncc-registry`) — to embed a
 registry node in your own process, see [Using it as a Go library](#using-it-as-a-go-library).
 
