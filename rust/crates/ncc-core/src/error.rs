@@ -113,7 +113,7 @@ pub fn with_pending_fallback<S: Clone + Send + Sync + 'static>(
 /// 兜底处理器：把请求路径原样报回，便于对着路由表核对。
 pub async fn fallback_not_migrated(uri: axum::http::Uri) -> ApiError {
     ApiError::not_implemented(format!(
-        "{} 尚未迁移到 Rust 版（原实现见 Go 服务的 httpapi 路由表）",
+        "{} 没有这条路由（Rust 版未注册；路由总表见 README 的「迁移状态」一节）",
         uri.path()
     ))
 }

@@ -138,7 +138,7 @@ check "集群视图（公开）" "200" "$(code "$B/api/cluster")"
 check "后台没密钥 403" "403" "$(code "$B/api/admin/overview")"
 check "反馈目录（公开）" "200" "$(code "$B/api/feedback/kinds")"
 
-step "未知 /api 路径回 501（未迁移兜底还在，不是静默 404）"
+step "未知 /api 路径回 501（未注册兜底还在，不是静默 404）"
 check "501" "501" "$(code "$B/api/nope-does-not-exist")"
 
 step "结果"
