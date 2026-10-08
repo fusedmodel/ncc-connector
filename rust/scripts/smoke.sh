@@ -112,6 +112,12 @@ REF_BODY="{\"ref\":\"$NID\",\"label\":\"同事2\"}"
 check "按 CLI 的 ref 字段再连一次（已存在 → 改备注 200）" "200" "$(code -X POST "$B/api/nodes/links" -H "Authorization: Bearer $TOK" \
   -H 'content-type: application/json' -d "$REF_BODY")"
 
+# 列表要同时给 `linked`（Go 的名字）与 `links`（平台与 `ncc nodes list` 读的名字）：
+# 只给一个的话，同一个命令打过来就是「连上了却显示 0 条」。
+LIST=$(curl -s -m 5 "$B/api/nodes" -H "Authorization: Bearer $TOK")
+check "列表里的连接条数（linked）" "1" "$(printf '%s' "$LIST" | json "['linked'].__len__()")"
+check "列表里的连接条数（links，CLI 读的是这个）" "1" "$(printf '%s' "$LIST" | json "['links'].__len__()")"
+
 step "API-Key 作用域"
 # ⚠️ 读的是 `secret`：Go 的响应是扁平的 `{id,label,prefix,scopes,createdAt,secret}`，
 # 从来没有 `key` 字段（早先这里读 `['key']`，是因为当时的 Rust 实现多给了一个）。

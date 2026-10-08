@@ -15,6 +15,18 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Added · `huf` artifact kind: user-facing resource packages (2026-10-09)
+
+`.huf` is the sibling of `.hur`: **`.hur` holds things that run, `.huf` holds things people read**
+(docs / prompts / templates / static assets / skill text). Same container, different manifest
+(`huf.json`, `harness-use-files/v1`) and no `src/` — so "can this file run?" is answered by the
+extension instead of by unpacking it.
+
+- `ARTIFACT_KINDS` gains `huf`; `/api/registry/kinds` reports it as **HUF** with a Chinese label.
+- The node only stores and serves `.huf` bytes (item metadata + signature, exactly like skill /
+  benchmark): **it does not unpack them** — that path exists for `.hur` because the node may have to
+  run it, and a resource package never runs.
+
 ### Changed · Brand rename: NCC Registry → NCC Connector (2026-10-08)
 
 The product name overlapped with the repository name and made it hard to tell the platform from the

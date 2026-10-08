@@ -167,11 +167,14 @@ async fn my_ns_ids(state: &AppState, user_id: &str) -> Result<Vec<String>, ApiEr
 
 /// GET /api/nodes?mine=1 —— `mine=1` 是我命名空间下的节点，否则是我连接表里的节点。
 /// GET /api/nodes —— 「我的节点」+「我连接的节点」，形状照 Go：
-/// `{"nodes":<我的>, "linked":<我连接的>, "mine":N, "total":N+M, "online":K, "ttlSec":T}`。
+/// `{"nodes":<我的>, "linked":<我连接的>, "links":<同一份>, "mine":N, "total":N+M, "online":K, "ttlSec":T}`。
 ///
-/// ⚠️ 两处容易写歪、写歪了客户端就读不到东西：
+/// ⚠️ 三处容易写歪、写歪了客户端就读不到东西：
 /// * **默认（没有查询串）就要给 `nodes`**：它是我自己那些节点，不是「只有 `?mine=1` 才给」。
 ///   只回 `linked` 的话，`ncc nodes` 这类客户端第一眼就是空列表。
+/// * **同时给 `linked` 与 `links`**：Go（以及平台侧）在这件事上分成了两个名字 —— 这边照 Go 是
+///   `linked`，平台与 `ncc nodes list` 读的是 `links`。只给一个，同一个命令打过来就是"连了却显示 0 条"。
+///   两份指向同一个数组（值语义，不是引用别名），谁都不必改。
 /// * `?can=` 是「全都要」的过滤，`<id>@verified` 只认**自证**（与 `/discover` 同一套语义）。
 async fn list_nodes(
     State(state): State<AppState>,
@@ -219,6 +222,8 @@ async fn list_nodes(
     Ok(ncc_core::error::ok(json!({
         "nodes": mine,
         "linked": linked,
+        // 平台侧与 CLI 读的键名（见函数头第 2 条）：同一份数据的第二个名字，不删 `linked`
+        "links": linked,
         "mine": mine.len(),
         "total": mine.len() + linked.len(),
         "online": online,
@@ -403,7 +408,14 @@ struct LinkReq {
     /// `alias` 会让同一次请求里出现两个键时直接 `duplicate field` 报 422。
     #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     node: String,
-    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
+    // ⚠️ 必须 `rename = "ref"`：字段名带下划线只是为了避开 Rust 关键字，JSON 那边的键是 `ref`
+    // （CLI 发的就是它）。少了这一条，serde 会去读 `ref_`，请求里那个键就悄悄丢了 ——
+    // 表现是"同一个命令打过来 404"，而脚本里 201 的那条（用 nodeId）却能过。
+    #[serde(
+        default,
+        rename = "ref",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     ref_: String,
     #[serde(
         default,

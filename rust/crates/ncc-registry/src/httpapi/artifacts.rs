@@ -29,6 +29,9 @@ pub const ARTIFACT_KINDS: &[&str] = &[
     "api",
     "harness",
     "hur",
+    // 资源包（Harness-Use Files）：面向用户的文件（文档 / 提示词 / 模板 / 资产），
+    // **没有入口、不执行** —— 与 `hur` 同一个容器，只是清单与内容约束不同。
+    "huf",
     "skill",
     "mcp",
     "plugin",
@@ -46,6 +49,10 @@ fn kind_meta(k: &str) -> (&'static str, &'static str) {
         "hur" => (
             "HUR",
             "Harness-Use Runtime 官方包（kind=agent 的包就是一个 Agent）",
+        ),
+        "huf" => (
+            "HUF",
+            "Harness-Use Files 资源包（面向用户的文件：文档 / 提示词 / 模板 / 资产；无入口、不执行）",
         ),
         "skill" => ("Skill", "给 Agent 的操作手册（SKILL.md）"),
         "mcp" => ("MCP", "Model Context Protocol 服务"),
@@ -1075,7 +1082,10 @@ mod tests {
     #[test]
     fn 类型词表() {
         assert!(valid_kind("hur"));
+        // 资源包与运行时包并列：两者都是"某个规范包"，但一个能跑一个不能
+        assert!(valid_kind("huf"));
         assert!(!valid_kind("unknown"));
         assert_eq!(kind_meta("hur").0, "HUR");
+        assert_eq!(kind_meta("huf").0, "HUF");
     }
 }
