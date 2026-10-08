@@ -659,7 +659,7 @@ fn share_page_html(
  .meta{{margin-top:16px;color:#7d8590;font-size:12.5px}}
  .ok{{color:#4ade80}}.bad{{color:#f87171}}
 </style></head><body><div class="card">
- <div class="k">NCC Registry · 分享</div>
+ <div class="k">NCC Connector · 分享</div>
  <h1>{title}</h1>
  <div class="ref">{ref_}</div>
  <div class="note">{note} —— <span class="{state_cls}">{state}</span></div>

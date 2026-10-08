@@ -560,7 +560,7 @@ const JOIN_PAGE_TPL: &str = r#"<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>接入内网 NCC Registry</title>
+<title>接入内网 NCC Connector</title>
 <meta name="robots" content="noindex,nofollow" />
 <style>
 :root{--bg:#fff;--bg2:#f9fafb;--bg3:#f3f4f6;--ink:#111827;--ink2:#4b5563;--ink3:#6b7280;
@@ -602,7 +602,7 @@ footer{margin-top:36px;color:var(--ink4);font-size:12.5px;border-top:1px solid v
 <div class="wrap">
   <div class="head">
     <div class="logo">N</div>
-    <h1>接入内网 NCC Registry</h1>
+    <h1>接入内网 NCC Connector</h1>
   </div>
   <p class="sub">这是一个自托管的内网节点（制品托管 · 节点托管 · Agent 发现与互联）。链接里带着接入凭据，粘贴即可接入。</p>
 
