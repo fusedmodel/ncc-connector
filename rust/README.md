@@ -45,8 +45,8 @@ REG_DB=../data/ncc-registry.db bash scripts/smoke.sh   # 也可以直接指向�
 |---|---|---|
 | **同一份 schema** | `src/schema.rs` 的 DDL 是把旧实现跑起来建出库后 `sqlite3 .schema` dump 的 | 实测：Rust 服务直接开在旧实现建的库上，读出正确计数 |
 | **老库补列** | `migrate` 分三阶段：建表 → `ALTER TABLE ADD COLUMN` 补列 → 建索引（与 GORM AutoMigrate 同理） | 单测覆盖；启动日志会打印「已补列 …」 |
-| **同一套令牌** | HS256、头 `{"alg":"HS256","typ":"JWT"}`、载荷字段（`sub/email/kind/node/scope/iat/exp`）逐字段对齐 | 实测：两边互发互验都通过 |
-| **同一套口令哈希** | bcrypt cost=10（`$2a$`），与 `golang.org/x/crypto/bcrypt` 互认 | 实测：用这份二进制注册的账号，旧实现也能登录 |
+| **同一套令牌** | HS256、头 `{"alg":"HS256","typ":"JWT"}`、载荷字段（`sub/email/kind/node/scope/iat/exp`）逐字段对齐 | 实测（Go 侧删除前）：两边互发互验都通过 |
+| **同一套口令哈希** | bcrypt cost=10（`$2a$`），与 `golang.org/x/crypto/bcrypt` 互认 | 实测（Go 侧删除前）：用这份二进制注册的账号，旧实现也能登录 |
 | **同一套 API-Key** | `ncc_<prefix>_<secret>`，库里只存 prefix 与整串 sha256 | 冒烟里验了只读 key 发布被拒 403 |
 | **同一套响应约定** | 成功 `{...}`；失败 `{"error":{"code","message"}}`，code 与文案照搬 | 冒烟逐项断言 |
 | **配置加密盒同构** | `enc:v1:` + base64(nonce‖ciphertext‖tag)，密钥 = HMAC-SHA256(节点密钥, `ncc-registry/config-content-v1`) | 冒烟直接查库断言「存的是密文」 |
@@ -129,5 +129,6 @@ bash scripts/smoke.sh    # 40 项端到端断言
 单测都是「真 SQLite + 真 SQL」：建临时库、跑 `schema::DDL`、断言行为；权限、可见性、
 token 只存哈希、secret 加密、老库补列这些边界都有覆盖。
 
-跨实现验证（当时的实测结论，也是这次重写的验收标准）：这份二进制开在旧实现建的老库上正常；
-它注册的账号旧实现能登录；它发布的制品、注册的节点旧实现能列出 / discover。
+跨实现验证：Go 实现删除**之前**实测过——这份二进制开在旧实现建出的老库上正常、它注册的账号
+旧实现能登录、它发布的制品与注册的节点旧实现能列出 / discover。现在 Go 侧代码已删，
+能复现的只有前半条（拿旧实现留下的库直接起）；后半条的结论只作历史记录。
