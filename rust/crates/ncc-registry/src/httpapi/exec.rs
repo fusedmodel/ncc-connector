@@ -540,6 +540,7 @@ async fn run_plan(
     cap: &Capability,
     plan: &Plan,
     log_path: &StdPath,
+    timeout: Duration,
     mut cancel: watch::Receiver<bool>,
 ) -> ExecResult {
     let argv = match build_argv(cap, plan) {
@@ -592,7 +593,6 @@ async fn run_plan(
         pumps.push(tokio::spawn(pump(err, lw.clone())));
     }
 
-    let timeout = Duration::from_millis(cap.timeout_ms.max(0) as u64);
     let deadline = tokio::time::sleep(timeout);
     tokio::pin!(deadline);
 
@@ -703,16 +703,22 @@ pub(crate) async fn exec_one(
     let _ = store::exec::mark_running(state.pool(), &rec.id).await;
 
     let cap = probe(state.cfg());
-    let res = run_plan(&cap, &plan, &log_path, rx).await;
+    // 每条任务用它**自己那条**墙上限，不是节点上限（Go 的 execOne 收到的 timeout 就是
+    // 提交时算好并写进 rec.TimeoutSec 的那个值）。错用节点上限会让 `timeoutSec: 2` 的
+    // `sleep 30` 一直跑到自然结束（冒烟第 5 节抓的就是这个）。
+    let timeout = if rec.timeout_sec > 0 {
+        Duration::from_secs(rec.timeout_sec as u64)
+    } else {
+        // 老库里的行可能没写 timeoutSec：退回节点上限，别让它变成「上来就超时」。
+        Duration::from_millis(cap.timeout_ms.max(0) as u64)
+    };
+    let res = run_plan(&cap, &plan, &log_path, timeout, rx).await;
 
     let mut err_msg = String::new();
     if let Some(e) = &res.err {
         err_msg = e.clone();
         if res.status == store::exec::EXEC_TIMEOUT {
-            err_msg = format!(
-                "超过墙上限 {} 被终止",
-                go_duration(Duration::from_millis(cap.timeout_ms.max(0) as u64))
-            );
+            err_msg = format!("超过墙上限 {} 被终止", go_duration(timeout));
         }
     }
     // finish 会在「已被取消」时拒绝覆盖（取消是用户意志，不该被后到的完成事件改回去）。
@@ -2410,6 +2416,42 @@ mod tests {
         assert!(
             started.elapsed() < Duration::from_secs(10),
             "超时没有真的把进程停掉"
+        );
+    }
+
+    /// Go 的规格：execOne 收到的 timeout 是**这条任务提交时定下的那个值**
+    /// （写进 rec.TimeoutSec），不是 `NCCR_EXEC_TIMEOUT` 这个节点上限。
+    /// 错用节点上限的话，下面 `timeoutSec: 1` 的 `sleep 30` 会一直跑到自然结束。
+    #[tokio::test]
+    async fn 超时_按每条任务自己的墙上限终止而不是节点上限() {
+        let st = state("timeout-per-task", &["process"], 1 << 20, 60).await;
+        let (_uid, secret) = seed_user(&st, "赵六").await;
+        let app = mk_app(&st);
+        let (_, v) = call(
+            &app,
+            req_json(
+                "POST",
+                "/api/exec/runs",
+                &secret,
+                json!({"engine": "process", "cmd": "sleep 30", "reason": "会超时", "timeoutSec": 1}),
+            ),
+        )
+        .await;
+        let id = v["run"]["id"].as_str().unwrap().to_string();
+        assert_eq!(v["run"]["timeoutSec"], 1);
+        let started = std::time::Instant::now();
+        let v = wait_status(
+            &app,
+            &secret,
+            &id,
+            &["succeeded", "failed", "timeout", "canceled"],
+        )
+        .await;
+        assert_eq!(v["run"]["status"], "timeout");
+        assert_eq!(v["run"]["error"], "超过墙上限 1s 被终止");
+        assert!(
+            started.elapsed() < Duration::from_secs(15),
+            "节点上限（60s）盖过了任务自己的 1s，进程没被按时终止"
         );
     }
 

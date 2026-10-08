@@ -546,7 +546,7 @@ private deployments: bytes on NAS or a dedicated disk, the database on local SSD
 | `NCCR_NODE_TTL` | `60s` | Online window for hosted nodes / workers (the master sweeps workers at `4×`) |
 | `NCCR_INVITE_CODE` | empty | Empty = open registration inside the network; if set, registration must carry an invite code (comma-separated for several) |
 | `NCCR_CONSOLE` | `true` | Whether to serve the built-in web console |
-| `NCCR_CONSOLE_DIR` | `./web` | Directory the console is served from (**no embedding**; the repository ships it at `rust/web`). A missing directory just leaves the route unmounted — the API is unaffected |
+| `NCCR_CONSOLE_DIR` | `./web` | Directory the console is served from (the repository ships it at `rust/web`; the directory wins). If it is missing, the copy **compiled into the binary** is served instead — same behaviour as Go's `go:embed`, so a copied binary still has a console |
 | `NCCR_P2P_SERVE` | `false` | Start a **hole-punchable entry point** with the service (one UDP socket that answers STUN Binding only; off by default) |
 | `NCCR_P2P_STUN` | several built in | STUN list (comma-separated) — use one you can reach; NAT profiling and punching rely on it |
 | `NCCR_P2P_TURN` | empty | Self-hosted TURN list. **Hard rule**: TURN must be hosted by the operator — the hosted layer stays out of the data path |
@@ -679,8 +679,8 @@ semantics (400 bad input / 401 unauthenticated / 403 not permitted / 404 missing
 
 ## Web console
 
-`GET /` is the built-in single-file console (`rust/web/index.html`, served from a directory at runtime
-— `NCCR_CONSOLE_DIR`, default `./web` — no build step): this node's identity and size, the worker list
+`GET /` is the built-in single-file console (`rust/web/index.html`; the `NCCR_CONSOLE_DIR` directory
+wins, and the copy compiled into the binary is the fallback — no build step): this node's identity and size, the worker list
 (online state / artifact counts / last heartbeat), the aggregated directory (searchable),
 hosted-node discovery (including region coverage),
 **node administration** (enter the admin key/secret to disable accounts, reset passwords, remove nodes,

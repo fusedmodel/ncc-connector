@@ -492,13 +492,64 @@ pub async fn kind_counts(
     Ok(rows.into_iter().collect())
 }
 
-/// 出现过的区域列表。
-pub async fn regions(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT region FROM hosted_nodes WHERE region <> '' ORDER BY region",
-    )
-    .fetch_all(pool)
-    .await
+/// 一个区域的在线/离线统计（`GET /api/nodes/regions` 用）。
+#[derive(Debug, Clone)]
+pub struct RegionCount {
+    pub region: String,
+    pub total: i64,
+    pub online: i64,
+}
+
+/// 各区域在线/离线节点数（区域覆盖视图）。
+///
+/// 与 Go 的三点口径对齐（漏掉哪一点调用方看到的数就不一样）：
+/// 1. 空 `region` 归到「未声明」，**不是被过滤掉**；
+/// 2. 按 `total DESC` 排；
+/// 3. `online` 按节点 TTL 现算（`last_seen >= now-ttl`），且**逐条解析时间**——
+///    `last_seen` 落库是 GORM 的文本格式（带时区偏移），直接扔进 SQL 做字符串比较只在
+///    偏移一致时才对，所以这里跟 `NodeRow::online` 走同一套解析。
+pub async fn regions(
+    pool: &SqlitePool,
+    ttl: std::time::Duration,
+) -> Result<Vec<RegionCount>, sqlx::Error> {
+    let rows: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT region, last_seen FROM hosted_nodes")
+            .fetch_all(pool)
+            .await?;
+    let now = chrono::Utc::now().fixed_offset();
+    let ttl_secs = ttl.as_secs() as i64;
+    let mut out: Vec<RegionCount> = Vec::new();
+    for (region, last_seen) in rows {
+        let region = if region.is_empty() {
+            "未声明".to_string()
+        } else {
+            region
+        };
+        let online = match last_seen.as_deref() {
+            Some(s) => {
+                now.signed_duration_since(parse_time_or_epoch(s))
+                    .num_seconds()
+                    <= ttl_secs
+            }
+            None => false,
+        };
+        match out.iter_mut().find(|r| r.region == region) {
+            Some(r) => {
+                r.total += 1;
+                if online {
+                    r.online += 1;
+                }
+            }
+            None => out.push(RegionCount {
+                region,
+                total: 1,
+                online: if online { 1 } else { 0 },
+            }),
+        }
+    }
+    // 稳定排序：total 相同的区域保持首次出现顺序。
+    out.sort_by(|a, b| b.total.cmp(&a.total));
+    Ok(out)
 }
 
 /// 是否有这个节点（心跳里判断归属用）。

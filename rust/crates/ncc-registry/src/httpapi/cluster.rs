@@ -348,9 +348,16 @@ async fn cluster_view(State(state): State<AppState>) -> ApiResult<Response> {
         "console": format!("{}/", cfg.public_url.trim_end_matches('/')),
     });
 
-    // worker 视角：回显自己认识的 master（没连上过就是 url + online=false）。
+    // worker 视角：回显自己认识的 master（一次都没成功过才是 url + online=false）。
     if cfg.role == crate::config::ROLE_WORKER {
-        out["master"] = json!({"url": cfg.master_url, "online": false});
+        out["master"] = master_view(cfg);
+        let (last, err) = master_extra();
+        if let Some(t) = last {
+            out["lastHeartbeat"] = json!(t);
+        }
+        if !err.is_empty() {
+            out["lastError"] = json!(err);
+        }
     }
     Ok(ok(out))
 }
@@ -488,7 +495,10 @@ struct IngestReq {
     summary: String,
     #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     tags: Vec<String>,
-    #[serde(default)]
+    // ⚠️ `manifest` 必须容忍 `null`：master 推分发时用的是 `web::parse_json_any`，
+    // 条目没有 manifest 就是 JSON `null`；`#[serde(default)]` 只兜「字段缺失」，
+    // 收到显式 `null` 会直接报「invalid type: null」→ 400，副本永远落不下来。
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     manifest: HashMap<String, Value>,
     #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     sha256: String,
@@ -1007,27 +1017,105 @@ async fn heartbeat_body(state: &AppState) -> Value {
 
 /// POST `<master>/api/cluster/{path}` —— 出站调用，带超时（别用无限超时把 master 挂死）。
 #[allow(dead_code)]
+/// worker 侧「我认识的 master」：身份块 + 最后一次成功心跳的时间 + 最后一次失败原因。
+///
+/// 与 Go 的 `clusterHub.{master,last,err}` 一一对应。**为什么要有这块状态**：
+/// master 的身份（含 `online`、集群规模）是它自己在 join/heartbeat 的响应里回报的，
+/// worker 只是把它记下来、在 `/api/cluster` 里回显 —— 不回显的话，CLI 与控制台看到的
+/// 永远是「master 离线」，哪怕心跳一直好好的。
+struct HubState {
+    master: Option<Value>,
+    last: Option<String>,
+    err: String,
+}
+
+fn hub() -> &'static std::sync::RwLock<HubState> {
+    static HUB: std::sync::OnceLock<std::sync::RwLock<HubState>> = std::sync::OnceLock::new();
+    HUB.get_or_init(|| {
+        std::sync::RwLock::new(HubState {
+            master: None,
+            last: None,
+            err: String::new(),
+        })
+    })
+}
+
+/// 记一次成功：记住 master 身份块 + 打上成功时间戳 + 清掉上次的错误。
+fn remember_success(out: &Value) {
+    let mut h = hub().write().unwrap_or_else(|e| e.into_inner());
+    if let Some(m) = out.get("master").filter(|m| m.is_object()) {
+        h.master = Some(m.clone());
+    }
+    h.last = Some(now_rfc3339());
+    h.err.clear();
+}
+
+/// 记一次失败：只留错误原因（`last` 不动 —— 它表示「最后一次成功」）。
+fn remember_error(msg: &str) {
+    let mut h = hub().write().unwrap_or_else(|e| e.into_inner());
+    h.err = msg.to_string();
+}
+
+/// worker 视角的 master 块（Go 的 `clusterView` 里那段合并）。
+fn master_view(cfg: &crate::config::Config) -> Value {
+    let h = hub().read().unwrap_or_else(|e| e.into_inner());
+    let mut block = json!({"url": cfg.master_url, "online": false});
+    if let Some(Value::Object(m)) = h.master.clone() {
+        if let Value::Object(target) = &mut block {
+            for (k, v) in m {
+                target.insert(k, v);
+            }
+            // `online` 由**最近一次通信是否成功**决定，不是 master 自己说的那个 true。
+            target.insert("online".into(), json!(h.err.is_empty()));
+        }
+    }
+    block
+}
+
+/// `/api/cluster` 里额外回显的两项（最后一次成功心跳的时间 / 最后一次失败原因）。
+fn master_extra() -> (Option<String>, String) {
+    let h = hub().read().unwrap_or_else(|e| e.into_inner());
+    (h.last.clone(), h.err.clone())
+}
+
 pub async fn post_to_master(state: &AppState, path: &str, body: &Value) -> Result<Value, String> {
     let cfg = state.cfg();
     if cfg.master_url.trim().is_empty() {
+        remember_error("未配置 master 地址");
         return Err("未配置 master 地址".to_string());
     }
-    let client = reqwest::Client::builder()
+    let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .build()
-        .map_err(|e| e.to_string())?;
+    {
+        Ok(c) => c,
+        Err(e) => {
+            remember_error(&e.to_string());
+            return Err(e.to_string());
+        }
+    };
     let mut req = client
         .post(format!("{}{path}", cfg.master_url.trim_end_matches('/')))
         .json(body);
     if !cfg.cluster_token.trim().is_empty() {
         req = req.header("X-NCC-Cluster-Token", cfg.cluster_token.trim());
     }
-    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            remember_error(&e.to_string());
+            return Err(e.to_string());
+        }
+    };
     let status = resp.status().as_u16();
-    let out: Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("master 响应无法解析: {e}"))?;
+    let out: Value = match resp.json().await {
+        Ok(v) => v,
+        Err(e) => {
+            let msg = format!("master 响应无法解析: {e}");
+            remember_error(&msg);
+            return Err(msg);
+        }
+    };
     if status >= 400 {
         let code = out
             .get("error")
@@ -1039,8 +1127,11 @@ pub async fn post_to_master(state: &AppState, path: &str, body: &Value) -> Resul
             .and_then(|e| e.get("message"))
             .and_then(|v| v.as_str())
             .unwrap_or("-");
-        return Err(format!("[{code}] {msg}"));
+        let err = format!("[{code}] {msg}");
+        remember_error(&err);
+        return Err(err);
     }
+    remember_success(&out);
     Ok(out)
 }
 

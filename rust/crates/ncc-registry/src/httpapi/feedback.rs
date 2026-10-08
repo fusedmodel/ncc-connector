@@ -35,13 +35,46 @@ use crate::store::feedback as fb;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/feedback/kinds", get(fb_kinds))
-        .route("/feedback/summary", get(summary_feedback))
-        .route("/feedback/inbox", get(list_feedback))
-        .route("/feedback", get(list_feedback).post(create_feedback))
-        .route("/feedback/", get(list_feedback).post(create_feedback))
-        .route("/feedback/{id}", get(get_feedback).patch(patch_feedback))
-        .route("/feedback/{id}/reply", post(reply_feedback))
+        .route("/feedback/kinds", get(fb_kinds).fallback(method_not_found))
+        .route(
+            "/feedback/summary",
+            get(summary_feedback).fallback(method_not_found),
+        )
+        .route(
+            "/feedback/inbox",
+            get(list_feedback).fallback(method_not_found),
+        )
+        .route(
+            "/feedback",
+            get(list_feedback)
+                .post(create_feedback)
+                .fallback(method_not_found),
+        )
+        .route(
+            "/feedback/",
+            get(list_feedback)
+                .post(create_feedback)
+                .fallback(method_not_found),
+        )
+        .route(
+            "/feedback/{id}",
+            get(get_feedback)
+                .patch(patch_feedback)
+                .fallback(method_not_found),
+        )
+        .route(
+            "/feedback/{id}/reply",
+            post(reply_feedback).fallback(method_not_found),
+        )
+}
+
+/// 「路径在、方法不在」的兜底：Go（gin）当年把这类请求也当未知路径，回 404
+/// `未知 API 路径: …`；axum 默认回 405（还带 Allow 头）。
+///
+/// 反馈面按 Go 的口径统一成 404 —— 只追加这条红线里「内容没有『改』这条路」，
+/// 就是靠 `PUT /api/feedback/:id` 得到 404（而不是 405）来判的。
+async fn method_not_found(uri: axum::http::Uri) -> ApiError {
+    ApiError::not_found(format!("未知 API 路径: {}", uri.path()))
 }
 
 /// 本族没有顶层公开页（反馈都在 `/api/feedback` 下）。

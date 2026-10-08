@@ -35,9 +35,10 @@ bash scripts/smoke.sh                           # 40 项端到端断言
 REG_DB=../data/ncc-registry.db bash scripts/smoke.sh   # 也可以直接指向既有库
 ```
 
-控制台：Rust 版从**目录**托管（不是编译进二进制），页面在本目录的 `web/` 下。
-`NCCR_CONSOLE_DIR`（默认 `./web`）指向它，目录不存在就不挂这条路由（API 不受影响）——
-所以镜像里要带上 `rust/web`，compose/CI 里都这么做了。
+控制台：**目录优先，内置兜底**。`NCCR_CONSOLE_DIR`（默认 `./web`）存在就从它托管
+（可替换 / 可定制，镜像里仍要带上 `rust/web`，compose/CI 都这么做）；目录不存在时退回
+**编译进二进制**的同一份页面 —— 与 Go 版 `go:embed` 一致，拷走一个二进制也能开控制台，
+不会因为「少给了一个目录」让 `GET /` 变成 404。
 
 ## 与 Go 版的兼容性（这是本次重写的核心约束）
 
@@ -67,7 +68,7 @@ REG_DB=../data/ncc-registry.db bash scripts/smoke.sh   # 也可以直接指向�
 | `NCCR_DATA_DIR` | `./data` | 数据根；相对路径按它解析 |
 | `NCCR_DB_PATH` | `<data>/ncc-registry.db` | SQLite 库文件 |
 | `NCCR_BLOB_DIR` | `<data>/blobs` | 制品字节（`/blobs` 静态公开） |
-| `NCCR_CONSOLE_DIR` | `./web` | 控制台静态目录 |
+| `NCCR_CONSOLE_DIR` | `./web` | 控制台静态目录（不存在则用编译进二进制的那一份） |
 | `NCCR_CONSOLE` | `true` | 是否托管控制台 |
 | `NCCR_INVITE_CODE` | 空（开放注册） | 设了就要邀请码；逗号分隔多码 |
 | `NCCR_NODE_TTL` | `60s` | 心跳超时即判离线（不落库，现场算） |

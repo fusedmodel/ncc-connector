@@ -3,6 +3,7 @@
 //! 每一族路由由各自模块提供 `routes()`（相对 `/api`）与 `public_routes()`（顶层公开页），
 //! 本文件只做拼装 —— 迁移某一族时只动一个文件，路由表不会变成公共热点。
 
+use axum::response::IntoResponse;
 use axum::Router;
 use tower_http::services::ServeDir;
 
@@ -58,7 +59,12 @@ pub fn build(state: &AppState) -> Router {
         .nest_service("/blobs", ServeDir::new(&cfg.blob_dir))
         .with_state(state.clone());
 
-    // 内置控制台：从 `NCCR_CONSOLE_DIR` 指向的目录托管，目录不存在就不挂。
+    // 内置控制台：优先从 `NCCR_CONSOLE_DIR` 指向的目录托管（可替换、可定制）；
+    // 目录不存在时退回**编译进二进制**的同一份页面。
+    //
+    // 为什么要退回：Go 版用 `go:embed` 把控制台打进二进制，**拷到哪里都能开**；
+    // 只认目录的话，`cp` 出来的二进制（脚本、容器、单机部署都是这么干的）会让 `/` 直接 404，
+    // 而 404 看起来像「服务坏了」，不像「少给了一个目录」。目录优先保留定制能力。
     //
     // 刻意**不用** `env!("CARGO_MANIFEST_DIR")`：那是编译期路径，二进制搬到别的机器上
     // 就指向一个不存在的目录，而且会随构建环境变化 —— 部署里没有比这更难查的事。
@@ -80,9 +86,39 @@ pub fn build(state: &AppState) -> Router {
                 }),
             )
             .fallback_service(ServeDir::new(&cfg.console_dir));
+    } else if cfg.console {
+        tracing::info!(
+            "控制台   内置（目录 {} 不存在）→ /",
+            cfg.console_dir.display()
+        );
+        app = app
+            .route(
+                "/console",
+                axum::routing::get(|| async {
+                    (
+                        axum::http::StatusCode::FOUND,
+                        [(axum::http::header::LOCATION, "/")],
+                    )
+                }),
+            )
+            .fallback(builtin_console);
     }
 
     app
+}
+
+/// 编译进二进制的控制台页面（与 `rust/web/index.html` 是同一份文件）。
+///
+/// `include_str!` 是编译期读文件 —— 改了 `rust/web/index.html` 要重新构建才生效，
+/// 这正是 Go 版 `go:embed` 的行为，也是「拷走一个二进制就能用」的前提。
+const BUILTIN_CONSOLE: &str = include_str!("../../../web/index.html");
+
+async fn builtin_console() -> axum::response::Response {
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        BUILTIN_CONSOLE,
+    )
+        .into_response()
 }
 
 /// GET /api/health

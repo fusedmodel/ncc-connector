@@ -143,10 +143,27 @@ async fn register(State(state): State<AppState>, Json(body): Json<CredReq>) -> A
         &u.email,
         state.cfg().jwt_ttl,
     );
-    Ok(helpers::ok_status(
-        StatusCode::CREATED,
-        json!({"token": token, "user": user_view(&u)}),
-    ))
+    let mut resp = json!({"token": token, "user": user_view(&u)});
+    // 第一个注册的账号就是这台节点的管理员；顺手给一把**机器**管理凭据。
+    // secret 只在这里返回一次（之后要轮换走 `ncc registry admin rotate`）——
+    // 漏了这段，管理员就得手工签 key，而 CLI 的 `admin login --key/--secret` 没有入口。
+    if u.is_admin {
+        match store::admin::create_admin_key(state.pool(), "bootstrap", &u.id).await {
+            Ok((k, secret)) => {
+                resp["admin"] = json!({
+                    "isAdmin": true,
+                    "key": k.key,
+                    "secret": secret,
+                    "howto": {
+                        "cli": format!("ncc registry admin login --key {} --secret <secret>", k.key),
+                        "note": "你是本节点的第一个账号，自动成为管理员；secret 只显示这一次",
+                    },
+                });
+            }
+            Err(e) => tracing::warn!("首个管理员已创建，但 admin key 签发失败: {e}"),
+        }
+    }
+    Ok(helpers::ok_status(StatusCode::CREATED, resp))
 }
 
 /// POST /api/auth/login
@@ -334,9 +351,13 @@ async fn create_key(
     let (k, secret) = store::apikeys::create(state.pool(), &a.user_id, body.label.trim(), &scopes)
         .await
         .map_err(ApiError::from_db)?;
+    // 形状照 Go：明文只放在顶层 `secret`（不叫 `key`，也不嵌一层）；另有 createdAt。
     Ok(helpers::ok_status(
         StatusCode::CREATED,
-        json!({"key": secret, "id": k.id, "label": k.label, "prefix": k.prefix, "scopes": scopes}),
+        json!({
+            "id": k.id, "label": k.label, "prefix": k.prefix,
+            "scopes": scopes, "createdAt": k.created_at, "secret": secret,
+        }),
     ))
 }
 

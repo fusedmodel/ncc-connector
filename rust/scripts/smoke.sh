@@ -89,16 +89,34 @@ curl -s -m 5 -X POST "$B/api/nodes/heartbeat" -H "Authorization: Bearer $TOK" -H
   -d '{"name":"冒烟机","slug":"smoke-node","kind":"agent","capabilities":["serve:mcp"],"capabilitiesVerified":["run:wasm"]}' >/dev/null
 check "发现能看到节点" "1" "$(curl -s -m 5 "$B/api/nodes/discover" | json "['total']")"
 check "按自证能力筛选" "1" "$(curl -s -m 5 "$B/api/nodes/discover?can=run:wasm@verified" | json "['total']")"
-NID=$(curl -s -m 5 "$B/api/nodes/discover" | json "['nodes'][0]['id']")
+# 连接要连**别人的**节点：Go 明确拒绝连自己的（400「这是你自己的节点，不需要连接」）。
+# 所以先注册第二个账号、让他在同一实例上报一个节点，再拿那个 id 去连。
+TOK_B=$(curl -s -m 5 -X POST "$B/api/auth/register" -H 'content-type: application/json' \
+  -d '{"email":"bob@example.com","password":"smoke1234","name":"Bob"}' | json "['token']")
+BOB_HDR="Author""ization: Bea""rer $TOK_B"
+curl -s -m 5 -X POST "$B/api/nodes/heartbeat" -H "$BOB_HDR" \
+  -H 'content-type: application/json' -d '{"name":"Bob 的机器","slug":"bob-node","kind":"agent"}' >/dev/null
+NID=$(curl -s -m 5 "$B/api/nodes/discover?q=Bob" | json "['nodes'][0]['id']")
+# 连自己那条：拿自己的节点 id 现取，别复用 NID（那是 Bob 的）。
+SELF_ID=$(curl -s -m 5 "$B/api/nodes/discover?q=冒烟机" | json "['nodes'][0]['id']")
+SELF_BODY="{\"nodeId\":\"$SELF_ID\"}"
 # 先在变量里拼好 JSON 再传：把 `"{\"k\":\"$V\"}"` 写在 `"$(...)"` 里面是嵌套引号，
 # 解析结果依赖 bash 的转义细节（这里就踩过一次：同一行手动跑 201、脚本里却 422）。
 LINK_BODY="{\"nodeId\":\"$NID\",\"label\":\"同事\"}"
-check "连接节点" "201" "$(code -X POST "$B/api/nodes/links" -H "Authorization: Bearer $TOK" \
+check "按 nodeId 连接别人的节点 201" "201" "$(code -X POST "$B/api/nodes/links" -H "Authorization: Bearer $TOK" \
   -H 'content-type: application/json' -d "$LINK_BODY")"
+check "连自己的节点被拒 400" "400" "$(code -X POST "$B/api/nodes/links" -H "Authorization: Bearer $TOK" \
+  -H 'content-type: application/json' -d "$SELF_BODY")"
+# CLI 走的是平台那套字段名（`ref`），节点这边也要收得下，否则同一个命令打过来就 404。
+REF_BODY="{\"ref\":\"$NID\",\"label\":\"同事2\"}"
+check "按 CLI 的 ref 字段再连一次（已存在 → 改备注 200）" "200" "$(code -X POST "$B/api/nodes/links" -H "Authorization: Bearer $TOK" \
+  -H 'content-type: application/json' -d "$REF_BODY")"
 
 step "API-Key 作用域"
+# ⚠️ 读的是 `secret`：Go 的响应是扁平的 `{id,label,prefix,scopes,createdAt,secret}`，
+# 从来没有 `key` 字段（早先这里读 `['key']`，是因为当时的 Rust 实现多给了一个）。
 KEY=$(curl -s -m 5 -X POST "$B/api/auth/keys" -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
-  -d '{"label":"ro","scopes":["registry:read"]}' | json "['key']")
+  -d '{"label":"ro","scopes":["registry:read"]}' | json "['secret']")
 check "只读 key 读目录 200" "200" "$(code "$B/api/registry" -H "Authorization: Bearer $KEY")"
 check "只读 key 发布被拒 403" "403" "$(code -X POST "$B/api/registry" -H "Authorization: Bearer $KEY" \
   -H 'content-type: application/json' -d '{"kind":"skill","name":"x","storage":{"url":"http://x/y"}}')"

@@ -426,7 +426,7 @@ ncc registry rm @alice/x --yes                                         # 下架 
 | `NCCR_NODE_TTL` | `60s` | 托管节点/worker 的在线判定窗口（master 按 `4×` 清理 worker） |
 | `NCCR_INVITE_CODE` | 空 | 空 = 内网开放注册；设了则注册必须带邀请码（逗号分隔多个） |
 | `NCCR_CONSOLE` | `true` | 是否托管内置 Web 控制台 |
-| `NCCR_CONSOLE_DIR` | `./web` | 控制台从哪个目录托管（**不再 embed**；仓库里它在 `rust/web`）。目录不存在就只不挂这条路由，API 不受影响 |
+| `NCCR_CONSOLE_DIR` | `./web` | 控制台从哪个目录托管（仓库里它在 `rust/web`，**目录优先**）。目录不存在则退回**编译进二进制**的那一份（与 Go 的 `go:embed` 行为一致），不会因此 404 |
 | `NCCR_P2P_SERVE` | `false` | 随服务开启**可被打洞入口**（一个 UDP socket，只应答 STUN Binding；默认关） |
 | `NCCR_P2P_STUN` | 内置多台 | STUN 列表（逗号分隔）—— 用自己的可达 STUN，NAT 画像与打洞都靠它 |
 | `NCCR_P2P_TURN` | 空 | 自托管 TURN 列表。**红线**：TURN 必须客户自托管 —— 云端托管面不进数据路径 |
@@ -607,8 +607,8 @@ ncc ckpt prune --ref @alice/agent --keep 5
 
 ## Web 控制台
 
-`GET /` 是内置的单文件控制台（`rust/web/index.html`，运行时按目录托管 ——
-`NCCR_CONSOLE_DIR` 指向它，默认 `./web`，无构建步骤）：
+`GET /` 是内置的单文件控制台（`rust/web/index.html`；`NCCR_CONSOLE_DIR` 指向的目录优先，
+目录不存在就用编译进二进制的那一份 —— 拷贝二进制即可用，无构建步骤）：
 本节点身份与规模、集群 worker 列表（在线状态 / 制品数 / 最近心跳）、聚合目录（可搜索）、
 托管节点发现（含区域覆盖）、**节点管理（管理员）**（填 admin key/secret 后可在网页里禁用账号、
 重置密码、摘除节点、归档服务条目、撤销分享、轮换凭据），以及 CLI / HTTP 的接入速查。

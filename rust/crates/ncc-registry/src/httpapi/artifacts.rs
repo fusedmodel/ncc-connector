@@ -336,7 +336,11 @@ async fn get_item(
 
 /* ---------------- 下载 ---------------- */
 
-/// GET /api/registry/{ref}/download
+/// GET /api/registry/{ref}/download —— 含**多节点**在数据面上的落点。
+///
+/// 本节点没有这份制品时，不直接 404：去集群目录找持有者，把地址指回**本节点**的
+/// `/bytes`（`provider=cluster`、`via.role=worker`）。这样客户端只需要认识一个地址，
+/// 节点的增删对它透明 —— 字节由本节点再去 worker 拉回来（见 [`bytes`]）。
 async fn download(
     State(state): State<AppState>,
     auth: Auth,
@@ -344,22 +348,65 @@ async fn download(
 ) -> ApiResult<Response> {
     let ref_ = ref_from_params(&id, slug.as_deref());
     let uid = auth.user_id().unwrap_or_default();
-    let row = find_visible(&state, &ref_, &uid).await?;
-    let _ = store::artifacts::bump_downloads(state.pool(), &row.id).await;
     let cfg = state.cfg();
+    if let Ok(row) = find_visible(&state, &ref_, &uid).await {
+        let _ = store::artifacts::bump_downloads(state.pool(), &row.id).await;
+        return Ok(helpers::ok_json(json!({
+            "id": row.id,
+            "name": row.name,
+            "version": row.version,
+            "namespaceSlug": row.ns_slug,
+            "slug": row.slug,
+            "url": download_url(cfg, &row),
+            "provider": row.storage_provider,
+            "sha256": row.sha256,
+            "size": row.size,
+            "downloads": row.downloads + 1,
+            "via": {"role": "self", "nodeId": cfg.node_id},
+        })));
+    }
+    let adverts = store::cluster::find_adverts_by_ref(state.pool(), &ref_)
+        .await
+        .map_err(ApiError::from_db)?;
+    let Some(pick) = pick_advert(&adverts) else {
+        return Err(ApiError::not_found(
+            "制品不存在（本节点与集群目录里都没有）",
+        ));
+    };
+    let url = format!(
+        "{}/api/registry/{}/bytes",
+        cfg.public_url.trim_end_matches('/'),
+        pick.ref_
+    );
     Ok(helpers::ok_json(json!({
-        "id": row.id,
-        "name": row.name,
-        "version": row.version,
-        "namespaceSlug": row.ns_slug,
-        "slug": row.slug,
-        "url": download_url(cfg, &row),
-        "provider": row.storage_provider,
-        "sha256": row.sha256,
-        "size": row.size,
-        "downloads": row.downloads + 1,
-        "via": {"role": "self", "nodeId": cfg.node_id},
+        "id": pick.ref_,
+        "name": pick.name,
+        "version": pick.version,
+        "namespaceSlug": pick.namespace_slug,
+        "slug": pick.slug,
+        "url": url,
+        "provider": "cluster",
+        "sha256": pick.sha256,
+        "size": pick.size,
+        "downloads": pick.downloads,
+        "via": {
+            "role": "worker",
+            "nodeId": pick.worker_id,
+            "nodeName": pick.worker_name.clone().unwrap_or_default(),
+            "nodeUrl": pick.worker_url.clone().unwrap_or_default(),
+        },
     })))
+}
+
+/// 目录聚合里挑一个持有者：**心跳最新的那个**（Go 的 `pickAdvert`）。
+fn pick_advert(adv: &[store::cluster::AdvertRow]) -> Option<store::cluster::AdvertRow> {
+    adv.iter()
+        .max_by(|a, b| {
+            let pa = ncc_core::timeutil::parse_time(a.seen_at.as_deref().unwrap_or_default());
+            let pb = ncc_core::timeutil::parse_time(b.seen_at.as_deref().unwrap_or_default());
+            pa.cmp(&pb)
+        })
+        .cloned()
 }
 
 /// GET /api/registry/{ref}/bytes —— 真字节。
@@ -377,9 +424,8 @@ async fn bytes(
         .await
         .map_err(ApiError::from_db)?;
     let Some(row) = some else {
-        return Err(ApiError::not_found(
-            "字节不存在（本节点与集群目录里都没有）",
-        ));
+        // 本地没有 → 从持有它的 worker 代理回来（客户端只认识本节点一个地址）。
+        return proxy_bytes(&state, &ref_).await;
     };
     let uid = auth.user_id().unwrap_or_default();
     let exp = web::query(&uri, "exp").unwrap_or_default();
@@ -409,6 +455,87 @@ async fn bytes(
         }
     }
     Ok(resp)
+}
+
+/// 本节点没有这份字节时，去持有者那里取回来再转发给调用方。
+///
+/// 三条与 Go 逐字对齐的边界：worker 没上报地址 → `502 worker_unreachable`；
+/// 拉取失败 → `502 worker_unreachable`（带上节点名与原因）；worker 回了 4xx/5xx →
+/// `502 worker_error`（**不把 worker 的错误体当自己的错误体发出去**）。
+/// 成功时转发 `Content-Type` 并打上 `X-NCC-Via: <workerId>`，方便排查「这份字节到底谁给的」。
+async fn proxy_bytes(state: &AppState, ref_: &str) -> ApiResult<Response> {
+    let adverts = store::cluster::find_adverts_by_ref(state.pool(), ref_)
+        .await
+        .map_err(ApiError::from_db)?;
+    let Some(pick) = pick_advert(&adverts) else {
+        return Err(ApiError::not_found(
+            "字节不存在（本节点与集群目录里都没有）",
+        ));
+    };
+    let name = pick.worker_name.clone().unwrap_or_default();
+    let Some(base) = pick.worker_url.clone().filter(|u| !u.trim().is_empty()) else {
+        return Err(ApiError::new(
+            StatusCode::BAD_GATEWAY,
+            "worker_unreachable",
+            "提供该制品的节点没有上报可用地址",
+        ));
+    };
+    let target = format!(
+        "{}/api/registry/{}/bytes",
+        base.trim_end_matches('/'),
+        pick.ref_
+    );
+    // 与 Go 一致：代理用**裸**客户端（5 分钟超时、不带集群令牌）——
+    // 带令牌会让「私有不该被代理」这件事被悄悄绕过。
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return Err(ApiError::internal(format!("构造代理客户端失败: {e}")));
+        }
+    };
+    let resp = match client.get(&target).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(ApiError::new(
+                StatusCode::BAD_GATEWAY,
+                "worker_unreachable",
+                format!("拉取节点 {name} 的字节失败: {e}"),
+            ))
+        }
+    };
+    let status = resp.status();
+    if status.is_client_error() || status.is_server_error() {
+        return Err(ApiError::new(
+            StatusCode::BAD_GATEWAY,
+            "worker_error",
+            format!("节点 {name} 返回 {}", status.as_u16()),
+        ));
+    }
+    let content_type = resp
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream")
+        .to_string();
+    let body = resp
+        .bytes()
+        .await
+        .map_err(|e| {
+            ApiError::new(
+                StatusCode::BAD_GATEWAY,
+                "worker_unreachable",
+                format!("读取节点 {name} 的字节失败: {e}"),
+            )
+        })?
+        .to_vec();
+    let mut out = web::bytes_response(body, &content_type, None);
+    if let Ok(v) = axum::http::HeaderValue::from_str(&pick.worker_id) {
+        out.headers_mut().insert("x-ncc-via", v);
+    }
+    Ok(out)
 }
 
 /* ---------------- 上传 / 发布 / 修改 / 删除 ---------------- */

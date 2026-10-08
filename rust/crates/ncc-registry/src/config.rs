@@ -38,9 +38,9 @@ pub struct Config {
     pub console: bool,
     /// 控制台静态目录（`NCCR_CONSOLE_DIR`，默认 `./web`）。
     ///
-    /// 与 Go 版的差别在这里：Go 用 `go:embed` 把控制台**打进二进制**，
-    /// Rust 版暂时从目录托管 —— 所以部署时要显式给这个目录（或干脆不挂）。
-    /// 在仓库里跑时可以直接指向 Go 那套前端资源：`NCCR_CONSOLE_DIR=httpapi/web`。
+    /// **目录优先，内置兜底**：这个目录存在就从它托管（可替换、可定制）；
+    /// 不存在就退回编译进二进制的那一份（`include_str!("../../../web/index.html")`），
+    /// 与 Go 版 `go:embed` 的行为一致 —— 拷走一个二进制也能开控制台。
     pub console_dir: PathBuf,
 
     pub node_id: String,
