@@ -490,17 +490,21 @@ fn hur_manifest_bytes(raw: &[u8]) -> Result<Vec<u8>, String> {
 
 #[derive(Debug, Default, Deserialize)]
 struct CardManifest {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     spec: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     kind: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     profile: String,
-    #[serde(default, rename = "id")]
+    #[serde(
+        default,
+        rename = "id",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     id_: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     version: String,
 }
 

@@ -78,9 +78,13 @@ async fn p2p_self(State(state): State<AppState>, auth: Auth) -> ApiResult<Respon
 #[derive(Debug, Deserialize, Default)]
 struct P2PCheckReq {
     /// 对端映射地址 `ip:port`（由对端 `/api/p2p/self` 或 `/api/p2p/serve` 报出）。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     peer: String,
-    #[serde(default, rename = "waitSec")]
+    #[serde(
+        default,
+        rename = "waitSec",
+        deserialize_with = "crate::httpapi::helpers::de_or_default"
+    )]
     wait_sec: i64,
 }
 
@@ -137,7 +141,7 @@ async fn p2p_serve_get(State(state): State<AppState>, auth: Auth) -> ApiResult<R
 struct ServeReq {
     #[serde(default)]
     on: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     peer: String,
 }
 

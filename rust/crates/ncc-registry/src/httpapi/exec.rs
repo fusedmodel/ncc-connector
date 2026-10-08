@@ -765,15 +765,19 @@ pub async fn stale_exec_runs(state: &AppState) {
 /// 与 Go 的行为一致（Go 的 `execCreateReq.Kind` 也是从头到尾没被读过）。
 #[derive(Debug, Default, Deserialize)]
 struct ExecCreateReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     engine: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     cmd: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     image: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     reason: String,
-    #[serde(default, rename = "timeoutSec")]
+    #[serde(
+        default,
+        rename = "timeoutSec",
+        deserialize_with = "crate::httpapi::helpers::de_or_default"
+    )]
     timeout: i64,
 }
 

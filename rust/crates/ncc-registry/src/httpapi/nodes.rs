@@ -338,11 +338,15 @@ async fn heartbeat(
 
 #[derive(Debug, Deserialize, Default)]
 struct LinkReq {
-    #[serde(default, rename = "nodeId")]
+    #[serde(
+        default,
+        rename = "nodeId",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     node_id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     label: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     note: String,
 }
 
@@ -472,15 +476,23 @@ async fn list_grants(State(state): State<AppState>, auth: Auth) -> ApiResult<Res
 
 #[derive(Debug, Deserialize, Default)]
 struct CreateGrantReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     kind: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     email: String,
-    #[serde(default, rename = "granteeUserId")]
+    #[serde(
+        default,
+        rename = "granteeUserId",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     grantee_user_id: String,
-    #[serde(default, rename = "namespaceId")]
+    #[serde(
+        default,
+        rename = "namespaceId",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     namespace_id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     note: String,
 }
 

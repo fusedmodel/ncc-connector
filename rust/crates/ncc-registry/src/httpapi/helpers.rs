@@ -39,6 +39,27 @@ pub fn ok_status(status: StatusCode, body: Value) -> Response {
     (status, Json(body)).into_response()
 }
 
+/// `null` / 缺省 → 空串（给 `Json<T>` 请求体的 `String` 字段用）。
+///
+/// Go 的 `encoding/json` 把 `null` 塞进 `string` 字段就是零值 `""`，serde 却会直接报
+/// 「expected a string」→ 处理器把它翻成 400。而 CLI 的可选参数是按 `Option<String>`
+/// 序列化的（`ncc register --email …` 不带 `--name` 就发 `null`），
+/// 于是「没写名字」这种最常见的情况会变成 400 —— 特别难查。
+pub fn de_str<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    use serde::Deserialize as _;
+    Ok(Option::<String>::deserialize(d)?.unwrap_or_default())
+}
+
+/// `null` / 缺省 → 该类型的零值（`Vec`、数字、`bool` 等），与 [`de_str`] 同因。
+pub fn de_or_default<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de> + Default,
+{
+    use serde::Deserialize as _;
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
+}
+
 /// 校验邮箱形态。
 pub fn valid_email(s: &str) -> bool {
     static RE: OnceLock<regex::Regex> = OnceLock::new();

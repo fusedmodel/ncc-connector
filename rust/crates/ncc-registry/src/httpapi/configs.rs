@@ -1106,9 +1106,9 @@ async fn config_revisions(
 
 #[derive(Debug, Default, Deserialize)]
 struct RollbackReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     revision: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     note: String,
 }
 

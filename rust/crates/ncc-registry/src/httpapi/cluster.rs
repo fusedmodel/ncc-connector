@@ -103,23 +103,23 @@ fn require_cluster_master(state: &AppState, headers: &HeaderMap) -> Result<(), A
 
 #[derive(Debug, Deserialize, Default)]
 struct NodeInfo {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     url: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     version: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     region: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     capabilities: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     artifacts: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     nodes: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     users: i64,
 }
 
@@ -127,33 +127,41 @@ struct NodeInfo {
 struct ClusterJoinReq {
     #[serde(default)]
     node: NodeInfo,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     artifacts: Vec<AdvertReq>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct AdvertReq {
-    #[serde(default, rename = "ref")]
+    #[serde(
+        default,
+        rename = "ref",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     ref_: String,
-    #[serde(default, rename = "namespaceSlug")]
+    #[serde(
+        default,
+        rename = "namespaceSlug",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     namespace_slug: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     slug: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     kind: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     version: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     summary: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     tags: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     sha256: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     size: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     downloads: i64,
     #[serde(default, rename = "updatedAt")]
     updated_at: Option<String>,
@@ -456,29 +464,41 @@ async fn cluster_directory(
 
 #[derive(Debug, Deserialize, Default)]
 struct IngestReq {
-    #[serde(default, rename = "ref")]
+    #[serde(
+        default,
+        rename = "ref",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     ref_: String,
-    #[serde(default, rename = "namespaceSlug")]
+    #[serde(
+        default,
+        rename = "namespaceSlug",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     namespace_slug: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     slug: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     kind: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     version: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     summary: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     tags: Vec<String>,
     #[serde(default)]
     manifest: HashMap<String, Value>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     sha256: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     size: i64,
-    #[serde(default, rename = "sourceUrl")]
+    #[serde(
+        default,
+        rename = "sourceUrl",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     source_url: String,
 }
 
@@ -656,7 +676,11 @@ async fn fetch_blob(state: &AppState, url: &str) -> Result<Vec<u8>, String> {
 
 #[derive(Debug, Deserialize, Default)]
 struct ReplicateReq {
-    #[serde(default, rename = "ref")]
+    #[serde(
+        default,
+        rename = "ref",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     ref_: String,
     /// "all" 或 ["workerId"/"workerName", …]；缺省时报错（避免误分发）。
     #[serde(default)]

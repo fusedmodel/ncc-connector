@@ -60,36 +60,60 @@ fn missing() -> ApiError {
 /// 与目标拥有者的东西，客户端说了不算。
 #[derive(Debug, Deserialize, Default)]
 struct FbWriteReq {
-    #[serde(default, rename = "aboutKind")]
+    #[serde(
+        default,
+        rename = "aboutKind",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     about_kind: String,
-    #[serde(default, rename = "aboutRef")]
+    #[serde(
+        default,
+        rename = "aboutRef",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     about_ref: String,
     /// 简写别名（CLI 两种都可能发）。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     about: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     kind: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     score: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     body: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     tags: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     agent: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     visibility: String,
-    #[serde(default, rename = "traceRef")]
+    #[serde(
+        default,
+        rename = "traceRef",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     trace_ref: String,
-    #[serde(default, rename = "stateRefs")]
+    #[serde(
+        default,
+        rename = "stateRefs",
+        deserialize_with = "crate::httpapi::helpers::de_or_default"
+    )]
     state_refs: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     hops: Vec<String>,
-    #[serde(default, rename = "parentId")]
+    #[serde(
+        default,
+        rename = "parentId",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     parent_id: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     origin: String,
-    #[serde(default, rename = "originId")]
+    #[serde(
+        default,
+        rename = "originId",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     origin_id: String,
 }
 

@@ -15,9 +15,9 @@ use crate::store;
 
 #[derive(Debug, Deserialize, Default)]
 struct CreateNsReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     slug: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     name: String,
 }
 

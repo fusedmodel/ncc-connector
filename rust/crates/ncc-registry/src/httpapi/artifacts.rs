@@ -460,25 +460,29 @@ async fn upload(
 
 #[derive(Debug, Deserialize, Default)]
 struct CreateItemReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     kind: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     slug: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     version: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     summary: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     tags: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     status: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     visibility: String,
     #[serde(default)]
     manifest: Option<serde_json::Value>,
-    #[serde(default, rename = "namespaceId")]
+    #[serde(
+        default,
+        rename = "namespaceId",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     namespace_id: String,
     #[serde(default)]
     storage: StorageRef,
@@ -490,11 +494,11 @@ struct CreateItemReq {
 
 #[derive(Debug, Deserialize, Default)]
 struct StorageRef {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     url: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     sha256: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     size: i64,
 }
 

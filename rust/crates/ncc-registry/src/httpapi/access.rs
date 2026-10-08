@@ -64,51 +64,55 @@ pub fn public_routes() -> Router<AppState> {
 
 #[derive(Debug, Deserialize, Default)]
 struct TicketCreateReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     label: String,
     /// 0 = 不限次。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     uses: i64,
     /// 0 = 不过期。
-    #[serde(default, rename = "expiresInDays")]
+    #[serde(
+        default,
+        rename = "expiresInDays",
+        deserialize_with = "crate::httpapi::helpers::de_or_default"
+    )]
     expires_in_days: i64,
     /// 缺省 = `NODE_TICKET_SCOPES`。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     scopes: Vec<String>,
     /// 缺省 = 创建者的个人命名空间。
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     namespace: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct TicketNodeReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     slug: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     kind: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     region: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     url: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     os: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     arch: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     version: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     agent: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     capabilities: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct RedeemReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     key: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     secret: String,
     /// 可选：兑换的同时把本机作为一个节点托管进来。
     #[serde(default)]

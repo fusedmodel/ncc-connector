@@ -61,11 +61,15 @@ pub fn routes() -> Router<AppState> {
 
 #[derive(Debug, Default, Deserialize)]
 struct ConnOpenReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     note: String,
-    #[serde(default, rename = "ttlSec")]
+    #[serde(
+        default,
+        rename = "ttlSec",
+        deserialize_with = "crate::httpapi::helpers::de_or_default"
+    )]
     ttl_sec: i64,
 }
 
@@ -331,19 +335,27 @@ async fn close_conn(
 
 #[derive(Debug, Default, Deserialize)]
 struct ConnExecReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     cmd: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     engine: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     reason: String,
-    #[serde(default, rename = "timeoutSec")]
+    #[serde(
+        default,
+        rename = "timeoutSec",
+        deserialize_with = "crate::httpapi::helpers::de_or_default"
+    )]
     timeout: i64,
     /// 默认 true：等它跑完（通道上多半是要看结果）。
     #[serde(default)]
     wait: Option<bool>,
     /// 相对工作目录的子目录（可选）。
-    #[serde(default, rename = "cwd")]
+    #[serde(
+        default,
+        rename = "cwd",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     working_dir: String,
 }
 

@@ -449,7 +449,7 @@ async fn admin_patch_user(
 
 #[derive(Debug, Deserialize, Default)]
 struct PassReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     password: String,
 }
 

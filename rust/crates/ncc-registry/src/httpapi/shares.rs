@@ -197,15 +197,23 @@ fn header_text(headers: &HeaderMap, name: &str) -> String {
 
 #[derive(Deserialize)]
 struct ShareCreateReq {
-    #[serde(default, rename = "ref")]
+    #[serde(
+        default,
+        rename = "ref",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     artifact_ref: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     label: String,
     /// 0 = 不限次
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     uses: i64,
     /// 0 = 不过期
-    #[serde(default, rename = "expiresInDays")]
+    #[serde(
+        default,
+        rename = "expiresInDays",
+        deserialize_with = "crate::httpapi::helpers::de_or_default"
+    )]
     expires_in_days: i64,
 }
 

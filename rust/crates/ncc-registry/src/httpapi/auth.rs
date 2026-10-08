@@ -20,31 +20,39 @@ use crate::store;
 
 #[derive(Debug, Deserialize, Default)]
 struct CredReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     email: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     password: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     name: String,
-    #[serde(default, rename = "inviteCode")]
+    #[serde(
+        default,
+        rename = "inviteCode",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     invite_code: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct PatchMeReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     password: String,
-    #[serde(default, rename = "newPassword")]
+    #[serde(
+        default,
+        rename = "newPassword",
+        deserialize_with = "crate::httpapi::helpers::de_str"
+    )]
     new_password: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct CreateKeyReq {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_str")]
     label: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::httpapi::helpers::de_or_default")]
     scopes: Vec<String>,
 }
 
