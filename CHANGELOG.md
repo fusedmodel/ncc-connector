@@ -1,6 +1,6 @@
 # Changelog
 
-`ncc-registry` — a self-hosted registry node: one binary plus an embeddable Go library.
+`ncc-registry` — a self-hosted registry node: one binary, one SQLite file (Rust, axum + sqlx).
 
 Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioned with
 [Semantic Versioning](https://semver.org/). "How to use it" is in [`README.md`](README.md);
@@ -14,6 +14,19 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 ---
 
 ## [Unreleased]
+
+### Changed · Brand rename: NCC Registry → NCC Connector (2026-10-08)
+
+The product name overlapped with the repository name and made it hard to tell the platform from the
+node. The brand is now **NCC Connector**, and the repository moved from `fusedmodel/ncc-registry` to
+**`fusedmodel/ncc-connector`** (the old URL redirects).
+
+- Renamed: repository and checkout directory (`ncc-registry` → `ncc-connector`), user-visible places: the console (`<title>`, header brand, footer), the join page
+  (`/j/{key}`), the share page footer, the READMEs, and the header of `config.rs`.
+- **Identifiers unchanged**: the binary and crate `ncc-registry`, the `NCCR_` env prefix, the image
+  `ghcr.io/fusedmodel/ncc-registry`, the database file `ncc-registry.db`, and every API path. These are
+  contracts with existing deployments and released clients — renaming them breaks both.
+
 
 ### 新增 · NCC Feedback（节点侧）：跨 Agent / 跨用户的反馈
 

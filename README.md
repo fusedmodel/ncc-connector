@@ -1,6 +1,13 @@
-# ncc-registry — a self-hosted registry node for your own network
+# NCC Connector — a self-hosted registry node for your own network
 
 > English | [中文](README.zh-CN.md)
+
+> **Note on the name**: the repository *and* the checkout directory were renamed from `ncc-registry`
+> to **`ncc-connector`**, and the product brand is now **NCC Connector** (the old repository URL
+> redirects). The **binary and crate (`ncc-registry`), env prefix (`NCCR_`), container image
+> (`ghcr.io/fusedmodel/ncc-registry`), database filename (`ncc-registry.db`) and every API path stay
+> unchanged** — they are contracts with existing deployments and released clients, and renaming them
+> would break both.
 
 A **single-binary** registry service that puts **artifact hosting**, **configuration hosting**,
 **share links**, **node hosting**, **agent discovery & interconnection**, and **node governance**
@@ -157,7 +164,7 @@ whichever node holds them. To make some or all workers hold a copy as well, the 
 ### 1. Single node (minimal form)
 
 ```bash
-cd ncc-registry
+cd ncc-connector
 cargo build --release --manifest-path rust/Cargo.toml
 NCCR_DATA_DIR=./data rust/target/release/ncc-registry   # master, :8282 by default
 # console at http://localhost:8282 (includes the "node administration" section)

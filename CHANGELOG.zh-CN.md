@@ -2,7 +2,7 @@
 
 > [English](CHANGELOG.md) | 中文
 
-`ncc-registry` —— 内网托管节点：单二进制 + 可嵌入的 Go 库。
+`ncc-registry` —— 内网托管节点：单二进制 + 一个 SQLite 文件（Rust，axum + sqlx）。
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
@@ -15,6 +15,18 @@
 ---
 
 ## [未发布]
+
+### 变更 · 品牌改名：NCC Registry → NCC Connector（2026-10-08）
+
+产品名与仓库名撞在一起，让人分不清说的是平台还是本节点。对外品牌统一改成 **NCC Connector**，
+仓库也从 `fusedmodel/ncc-registry` 搬到 **`fusedmodel/ncc-connector`**（旧地址 301 跳转）。
+
+- 改名覆盖：仓库与检出目录（`ncc-registry` → `ncc-connector`）、对外可见处：控制台（`<title>` / 页头品牌 / 页脚）、接入页（`/j/{key}`）、分享页页脚、
+  两份 README，以及 `config.rs` 头部对 `NCCR_` 的解释。
+- **标识符一律不动**：二进制与 crate 名 `ncc-registry`、env 前缀 `NCCR_`、
+  镜像 `ghcr.io/fusedmodel/ncc-registry`、数据库文件 `ncc-registry.db`、所有 API 路径。
+  这些是既有部署与已发布客户端的契约，跟着改会两边一起坏掉。
+
 
 ### 新增 · 连接通道（`ncc conn`）：通信基础设施
 

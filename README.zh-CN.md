@@ -1,6 +1,12 @@
-# ncc-registry · 内网托管节点
+# NCC Connector · 内网托管节点
 
 > [English](README.md) | 中文
+
+> **改名说明**：仓库与检出目录都由 `ncc-registry` 改名为 **`ncc-connector`**，对外品牌统一为
+> **NCC Connector**（旧仓库地址 301 跳转）。**可执行文件与 crate 名（`ncc-registry`）、
+> 环境变量前缀（`NCCR_`）、容器镜像（`ghcr.io/fusedmodel/ncc-registry`）、数据库文件名
+> （`ncc-registry.db`）与所有 API 路径都保持不变** —— 它们是既有部署与已发布客户端的契约，
+> 跟着改会让两边当场失效。
 
 一个**单二进制**的内网 Registry 服务：把「**制品托管**」「**配置托管**」「**分享**」
 「**节点托管**」「**Agent 发现与互联**」「**节点治理**」收在一个进程里，
@@ -80,7 +86,7 @@ flowchart TB
 ### ① 单节点（最小形态）
 
 ```bash
-cd ncc-registry
+cd ncc-connector
 cargo build --release --manifest-path rust/Cargo.toml
 NCCR_DATA_DIR=./data rust/target/release/ncc-registry   # master，默认 :8282
 # 控制台 http://localhost:8282（含「节点管理」区块）
