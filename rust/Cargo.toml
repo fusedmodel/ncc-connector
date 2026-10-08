@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = ["crates/ncc-core", "crates/ncc-registry"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "fs", "limit"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "json", "chrono"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
+bcrypt = "0.17"
+rand = "0.8"
+hex = "0.4"
+aes-gcm = "0.10"
+uuid = { version = "1", features = ["v4"] }
+regex = "1"
+async-trait = "0.1"
+mime_guess = "2"
+percent-encoding = "2"
+bytes = "1"

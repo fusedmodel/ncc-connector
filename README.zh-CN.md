@@ -6,10 +6,11 @@
 「**节点托管**」「**Agent 发现与互联**」「**节点治理**」收在一个进程里，
 并支持**多节点**（一个 `master` + 若干 `worker`）横向铺开。
 
-> **Rust 重写版（进行中）**：[`../ncc-rs/`](../ncc-rs/) 用 axum + tokio + sqlx 重新实现了本节点。
-> 它可以直接开在**现有**的 `ncc-registry.db` 上（老库缺的列启动时自动补），并与这份 Go 版
-> **双向互通** —— 同一套令牌、同一套口令哈希、同一套响应形状、同一个 `enc:v1:` 加密盒。
-> 已迁移的端点与剩余清单见 [`../ncc-rs/README.md`](../ncc-rs/README.md)。
+> **Rust 重写版（进行中）**：[`rust/`](rust/) 用 axum + tokio + sqlx 重新实现了本节点
+> （二进制名同样是 `ncc-registry`，两者可以直接对换）。它可以直接开在**现有**的
+> `ncc-registry.db` 上（老库缺的列启动时自动补），并与这份 Go 版**双向互通** ——
+> 同一套令牌、同一套口令哈希、同一套响应形状、同一个 `enc:v1:` 加密盒。
+> 已迁移的端点与剩余清单见 [`rust/README.md`](rust/README.md)。
 
 它属于 [`ncc`](https://github.com/fusedmodel/ncc) 这个开源/可分发的部分：Go 单二进制、SQLite 单文件、
 内置 Web 控制台，不依赖平台私有代码，也不引入外部数据库或对象存储就能跑。
