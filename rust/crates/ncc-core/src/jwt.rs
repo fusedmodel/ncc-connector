@@ -66,7 +66,11 @@ mod tests {
         let t = sign_hs256("sec", payload);
         assert!(verify_hs256("other", &t).is_err());
         // 改载荷（重放攻击的最朴素形态）
-        let tampered = format!("{}.{}", t.split('.').next().unwrap(), crate::crypto::b64url(b"{}"));
+        let tampered = format!(
+            "{}.{}",
+            t.split('.').next().unwrap(),
+            crate::crypto::b64url(b"{}")
+        );
         assert!(verify_hs256("sec", &tampered).is_err());
     }
 

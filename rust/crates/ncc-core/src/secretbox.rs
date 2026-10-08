@@ -31,14 +31,15 @@ impl SecretBox {
             return Err("secretbox: 节点密钥为空".to_string());
         }
         let key = crate::crypto::hmac_sha256(secret.as_bytes(), b"ncc-registry/config-content-v1");
-        let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| format!("secretbox: 初始化失败: {e}"))?;
+        let cipher =
+            Aes256Gcm::new_from_slice(&key).map_err(|e| format!("secretbox: 初始化失败: {e}"))?;
         Ok(Self { cipher })
     }
 
     /// 加密明文，返回带前缀的密文。
     pub fn seal(&self, plain: &str) -> Result<String, String> {
-        use aes_gcm::aead::OsRng;
         use aes_gcm::aead::rand_core::RngCore;
+        use aes_gcm::aead::OsRng;
         let mut nonce_bytes = [0u8; NONCE_LEN];
         OsRng.fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);

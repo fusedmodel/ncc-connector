@@ -17,6 +17,7 @@ pub mod exec;
 pub mod feedback;
 pub mod helpers;
 pub mod index;
+pub mod meta;
 pub mod namespaces;
 pub mod nodes;
 pub mod p2p;
@@ -28,8 +29,8 @@ pub mod traces;
 use std::sync::Arc;
 
 use axum::extract::FromRequestParts;
-use axum::http::HeaderMap;
 use axum::http::request::Parts;
+use axum::http::HeaderMap;
 use sqlx::SqlitePool;
 
 use ncc_core::error::ApiError;
@@ -114,7 +115,9 @@ impl Auth {
     pub fn require_session(&self) -> Result<&AuthInfo, ApiError> {
         match self.0.as_ref() {
             Some(a) if a.session => Ok(a),
-            Some(_) => Err(ApiError::forbidden("该操作需要用户会话（API-Key 不可代做）")),
+            Some(_) => Err(ApiError::forbidden(
+                "该操作需要用户会话（API-Key 不可代做）",
+            )),
             None => Err(ApiError::unauthorized("需要登录")),
         }
     }
@@ -145,7 +148,9 @@ pub async fn resolve_auth(state: &AppState, headers: &HeaderMap) -> Option<AuthI
     }
 
     let info = crate::jwt::parse(&state.cfg().jwt_secret, &token).ok()?;
-    let u = store::users::by_id(state.pool(), &info.user_id).await.ok()??;
+    let u = store::users::by_id(state.pool(), &info.user_id)
+        .await
+        .ok()??;
     if u.disabled {
         return None;
     }

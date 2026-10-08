@@ -12,6 +12,23 @@ use ncc_core::scope::AuthInfo;
 use crate::config::Config;
 use crate::store;
 
+/// `/x/{id}` 与 `/x/{id}/{slug}` 共用同一个 handler 时的路由参数。
+///
+/// ⚠️ **不要改回 `Path<(String, Option<String>)>`**：axum 对元组取参要求元素个数与
+/// 路由参数**完全相等**（`deserialize_tuple` 里先判 `url_params.len() != len`），
+/// 于是单段路由 `/x/{id}` 上会直接被判「参数个数不对」而失败 —— 而这个错**只在真实
+/// 请求里出现**，直接调 handler 的单测（自己传 `Path((..))`）永远抓不到。
+/// 命名结构体走的是 map 反序列化，缺的字段由 `#[serde(default)]` 补成 `None`，
+/// 一段、两段两种路由都能用。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct IdSlug {
+    /// 单段引用（`C-…` / `KD-…` / `AR-…`）或两段引用里的第一段（`@命名空间`）。
+    pub id: String,
+    /// 两段引用的第二段（slug）；单段路由上没有这个参数。
+    #[serde(default)]
+    pub slug: Option<String>,
+}
+
 /// `200 {"...": ...}`。
 pub fn ok_json(body: Value) -> Response {
     (StatusCode::OK, Json(body)).into_response()
@@ -25,17 +42,13 @@ pub fn ok_status(status: StatusCode, body: Value) -> Response {
 /// 校验邮箱形态。
 pub fn valid_email(s: &str) -> bool {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        regex::Regex::new(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").expect("静态正则合法")
-    });
+    let re =
+        RE.get_or_init(|| regex::Regex::new(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").expect("静态正则合法"));
     re.is_match(s.trim())
 }
 
 /// 要求调用方是本节点管理员。
-pub async fn require_admin(
-    state: &super::AppState,
-    auth: &AuthInfo,
-) -> Result<(), ApiError> {
+pub async fn require_admin(state: &super::AppState, auth: &AuthInfo) -> Result<(), ApiError> {
     let u = store::users::by_id(state.pool(), &auth.user_id)
         .await
         .map_err(ApiError::from_db)?

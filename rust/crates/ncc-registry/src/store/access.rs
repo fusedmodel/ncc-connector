@@ -207,8 +207,12 @@ mod tests {
             std::env::temp_dir().join(format!("ncc-accessstore-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let p = ncc_core::pool::open_sqlite(&dir.join("t.db")).await.unwrap();
-        ncc_core::pool::migrate(&p, crate::schema::DDL).await.unwrap();
+        let p = ncc_core::pool::open_sqlite(&dir.join("t.db"))
+            .await
+            .unwrap();
+        ncc_core::pool::migrate(&p, crate::schema::DDL)
+            .await
+            .unwrap();
         (p, dir)
     }
 
@@ -222,7 +226,9 @@ mod tests {
         let b = new_ticket_key();
         assert!(a.starts_with("NK-"), "{a}");
         assert_eq!(a.len(), 9, "{a}");
-        assert!(a[3..].chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
+        assert!(a[3..]
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_lowercase()));
         assert_ne!(a, b);
         assert_eq!(new_ticket_secret().len(), 32);
     }
@@ -252,7 +258,10 @@ mod tests {
         assert_ne!(t.secret_hash, "s3cret");
         assert_eq!(t.secret_hash, hash_secret("s3cret"));
         assert!(t.secret_matches("s3cret"));
-        assert!(t.secret_matches(" s3cret "), "比对前要 trim（Go 侧同样 trim）");
+        assert!(
+            t.secret_matches(" s3cret "),
+            "比对前要 trim（Go 侧同样 trim）"
+        );
         assert!(!t.secret_matches("别的"));
         assert_eq!(t.scope_list(), scopes(&["nodes:write", "registry:read"]));
 
@@ -335,12 +344,32 @@ mod tests {
     #[tokio::test]
     async fn 列表与删除只限自己签发的() {
         let (p, dir) = pool("list").await;
-        let mine = create(&p, "NK-MINE1", "s", "我的", &scopes(&[]), "NS-1", "U-1", 0, None)
-            .await
-            .unwrap();
-        let other = create(&p, "NK-OTHR1", "s", "别人的", &scopes(&[]), "NS-1", "U-2", 0, None)
-            .await
-            .unwrap();
+        let mine = create(
+            &p,
+            "NK-MINE1",
+            "s",
+            "我的",
+            &scopes(&[]),
+            "NS-1",
+            "U-1",
+            0,
+            None,
+        )
+        .await
+        .unwrap();
+        let other = create(
+            &p,
+            "NK-OTHR1",
+            "s",
+            "别人的",
+            &scopes(&[]),
+            "NS-1",
+            "U-2",
+            0,
+            None,
+        )
+        .await
+        .unwrap();
 
         let list = list_by_creator(&p, "U-1").await.unwrap();
         assert_eq!(list.len(), 1);

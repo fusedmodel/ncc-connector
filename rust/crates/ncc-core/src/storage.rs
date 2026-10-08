@@ -15,7 +15,11 @@ pub struct LocalStorage {
 
 impl LocalStorage {
     /// `name_in_url` 例如 `blobs` / `uploads`（不带斜杠）。
-    pub fn new(dir: impl AsRef<Path>, public_base: &str, name_in_url: &str) -> std::io::Result<Self> {
+    pub fn new(
+        dir: impl AsRef<Path>,
+        public_base: &str,
+        name_in_url: &str,
+    ) -> std::io::Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         std::fs::create_dir_all(&dir)?;
         Ok(Self {
@@ -54,7 +58,9 @@ impl LocalStorage {
 
     fn path_of(&self, name: &str) -> Result<PathBuf, String> {
         let clean = Self::safe_name(name)?;
-        Ok(self.dir.join(clean.replace('/', std::path::MAIN_SEPARATOR_STR)))
+        Ok(self
+            .dir
+            .join(clean.replace('/', std::path::MAIN_SEPARATOR_STR)))
     }
 
     /// 写入字节（原子写：先写临时文件再 rename），返回可对外访问的地址。
@@ -121,7 +127,10 @@ mod tests {
         assert!(LocalStorage::safe_name("").is_err());
         assert!(LocalStorage::safe_name("a\\b").is_err());
         assert!(LocalStorage::safe_name("C:evil").is_err());
-        assert_eq!(LocalStorage::safe_name("a/b/c.hur.gz").unwrap(), "a/b/c.hur.gz");
+        assert_eq!(
+            LocalStorage::safe_name("a/b/c.hur.gz").unwrap(),
+            "a/b/c.hur.gz"
+        );
         assert_eq!(LocalStorage::safe_name("/a//b/").unwrap(), "a/b");
     }
 

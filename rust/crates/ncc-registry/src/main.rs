@@ -75,6 +75,9 @@ async fn run() -> Result<(), String> {
         tracing::info!("master   {}", cfg.master_url);
     }
 
+    // 集群后台循环：worker 心跳 / master 清理幽灵节点（没有请求可依，必须在这里挂）
+    httpapi::cluster::spawn_hub(&state);
+
     let app = router::build(&state)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(ncc_core::web::cors_layer(&cfg.cors_origins));

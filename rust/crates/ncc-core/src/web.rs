@@ -62,7 +62,11 @@ pub fn query_i64(uri: &Uri, key: &str, def: i64) -> i64 {
 /// 查询串里的布尔：`1/true/yes/on` 为真（与 Go 的 `mine=1` / `mine=true` 一致）。
 pub fn query_bool(uri: &Uri, key: &str) -> bool {
     matches!(
-        query(uri, key).unwrap_or_default().trim().to_lowercase().as_str(),
+        query(uri, key)
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase()
+            .as_str(),
         "1" | "true" | "yes" | "on"
     )
 }
@@ -121,7 +125,13 @@ pub fn bytes_response(data: Vec<u8>, content_type: &str, filename: Option<&str>)
     if let Some(name) = filename {
         let ascii: String = name
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || "._-".contains(c) { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || "._-".contains(c) {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         let encoded = utf8_percent_encode(name, NON_ALPHANUMERIC).to_string();
         let value = format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}");
@@ -174,7 +184,10 @@ pub fn bool_field(v: &serde_json::Value, key: &str) -> bool {
             serde_json::Value::Bool(b) => *b,
             serde_json::Value::Number(n) => n.as_i64().unwrap_or(0) != 0,
             serde_json::Value::String(s) => {
-                matches!(s.trim().to_lowercase().as_str(), "1" | "true" | "yes" | "on")
+                matches!(
+                    s.trim().to_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
             }
             _ => false,
         },
@@ -188,7 +201,9 @@ mod tests {
 
     #[test]
     fn 查询串解析() {
-        let uri: Uri = "/api/registry?q=%E4%B8%AD%E6%96%87&page=2&mine=true".parse().unwrap();
+        let uri: Uri = "/api/registry?q=%E4%B8%AD%E6%96%87&page=2&mine=true"
+            .parse()
+            .unwrap();
         assert_eq!(query(&uri, "q").unwrap(), "中文");
         assert_eq!(query_i64(&uri, "page", 1), 2);
         assert!(query_bool(&uri, "mine"));

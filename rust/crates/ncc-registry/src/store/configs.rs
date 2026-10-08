@@ -55,7 +55,11 @@ pub struct ConfigRow {
 impl ConfigRow {
     /// 规范引用 `@命名空间/slug`。
     pub fn ref_of(&self) -> String {
-        format!("@{}/{}", self.ns_slug.clone().unwrap_or_default(), self.slug)
+        format!(
+            "@{}/{}",
+            self.ns_slug.clone().unwrap_or_default(),
+            self.slug
+        )
     }
 
     /// 公开且 active —— 这一条是「谁都能读」的唯一入口。
@@ -220,7 +224,10 @@ fn where_clause(opts: &ListOpts) -> (String, Vec<String>) {
 }
 
 /// 列出配置（分页 + 总数），按 `updated_at DESC`。
-pub async fn list(pool: &SqlitePool, opts: &ListOpts) -> Result<(Vec<ConfigRow>, i64), sqlx::Error> {
+pub async fn list(
+    pool: &SqlitePool,
+    opts: &ListOpts,
+) -> Result<(Vec<ConfigRow>, i64), sqlx::Error> {
     let (where_sql, binds) = where_clause(opts);
 
     let count_sql = format!(
@@ -262,7 +269,10 @@ pub async fn by_id(pool: &SqlitePool, id: &str) -> Result<Option<ConfigRow>, sql
         "SELECT {SELECT_COLS} FROM config_entries c JOIN namespaces ns ON ns.id = c.namespace_id \
          LEFT JOIN users u ON u.id = ns.owner_id WHERE c.id = ?"
     );
-    sqlx::query_as::<_, ConfigRow>(&sql).bind(id).fetch_optional(pool).await
+    sqlx::query_as::<_, ConfigRow>(&sql)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
 }
 
 /// 按「命名空间 + slug」取（外部引用的写法：`@team/network`）。
@@ -515,7 +525,8 @@ pub async fn find_revision(
     config_id: &str,
     revision: i64,
 ) -> Result<Option<ConfigRevision>, sqlx::Error> {
-    let sql = format!("SELECT {REV_COLS} FROM config_revisions WHERE config_id = ? AND revision = ?");
+    let sql =
+        format!("SELECT {REV_COLS} FROM config_revisions WHERE config_id = ? AND revision = ?");
     sqlx::query_as::<_, ConfigRevision>(&sql)
         .bind(config_id)
         .bind(revision)
@@ -559,7 +570,9 @@ mod tests {
 
     async fn pool() -> SqlitePool {
         let p = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        ncc_core::pool::migrate(&p, crate::schema::DDL).await.unwrap();
+        ncc_core::pool::migrate(&p, crate::schema::DDL)
+            .await
+            .unwrap();
         p
     }
 
@@ -648,7 +661,10 @@ mod tests {
         // 旧版本内容仍在
         assert_eq!(revs[1].content, "a: 1");
         assert_eq!(revs[1].note, "（未写变更说明）");
-        assert_eq!(find_revision(&p, &id, 1).await.unwrap().unwrap().content, "a: 1");
+        assert_eq!(
+            find_revision(&p, &id, 1).await.unwrap().unwrap().content,
+            "a: 1"
+        );
     }
 
     #[tokio::test]

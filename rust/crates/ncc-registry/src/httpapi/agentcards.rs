@@ -853,7 +853,10 @@ async fn create_agent_card(
     if !key.is_empty() {
         let n = key.chars().count();
         if !(3..=16).contains(&n) {
-            return Err(ApiError::bad_request("bad_request", "访问 key 长度需 3-16 位"));
+            return Err(ApiError::bad_request(
+                "bad_request",
+                "访问 key 长度需 3-16 位",
+            ));
         }
         pass_salt = store::agentcards::new_salt();
         pass_hash = store::agentcards::hash_pass(&pass_salt, &key);
@@ -1190,8 +1193,14 @@ async fn download_agent_card_blob(
     if let Ok(v) = HeaderValue::from_str(&format!("{}@{}", card.agent_id, card.agent_version)) {
         h.insert("x-ncc-agent", v);
     }
-    h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
-    h.insert("x-robots-tag", HeaderValue::from_static("noindex, nofollow"));
+    h.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    h.insert(
+        "x-robots-tag",
+        HeaderValue::from_static("noindex, nofollow"),
+    );
     let filename = format!("{}-{}.hur", card.agent_id, card.agent_version);
     let ascii: String = filename
         .chars()
@@ -1335,10 +1344,16 @@ fn send_card_html(status: StatusCode, title: &str, body: &str) -> Response {
         header::CONTENT_TYPE,
         HeaderValue::from_static("text/html; charset=utf-8"),
     );
-    h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    h.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
     h.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
     // 点到点链接不进搜索引擎：这不是节点内容，只该被「拿到链接的人」看到。
-    h.insert("x-robots-tag", HeaderValue::from_static("noindex, nofollow"));
+    h.insert(
+        "x-robots-tag",
+        HeaderValue::from_static("noindex, nofollow"),
+    );
     resp
 }
 
@@ -1544,7 +1559,9 @@ mod tests {
 
     async fn state(name: &str) -> AppState {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
-        ncc_core::pool::migrate(&pool, crate::schema::DDL).await.unwrap();
+        ncc_core::pool::migrate(&pool, crate::schema::DDL)
+            .await
+            .unwrap();
         let mut cfg = crate::config::load().expect("默认配置可加载");
         cfg.public_url = "http://localhost:8282".to_string();
         cfg.jwt_secret = "test-secret".to_string();
@@ -1574,7 +1591,9 @@ mod tests {
         let u = store::users::create(state.pool(), name, &format!("{name}@x.com"), "h")
             .await
             .unwrap();
-        let (_k, secret) = store::apikeys::create(state.pool(), &u.id, "t", &[]).await.unwrap();
+        let (_k, secret) = store::apikeys::create(state.pool(), &u.id, "t", &[])
+            .await
+            .unwrap();
         (u.id, secret)
     }
 
@@ -1705,8 +1724,13 @@ mod tests {
     async fn call(app: &Router, req: Request<Body>) -> (StatusCode, Value) {
         let resp = app.clone().oneshot(req).await.unwrap();
         let status = resp.status();
-        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 22).await.unwrap();
-        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 22)
+            .await
+            .unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
     }
 
     fn post_card(bearer: &str, query: &str, body: Vec<u8>) -> Request<Body> {
@@ -1760,10 +1784,7 @@ mod tests {
     #[test]
     fn hur_清单读取_gzip与非gzip都认() {
         let mf = manifest_json("demo", "2.0.0");
-        assert_eq!(
-            hur_manifest_bytes(&hur_bytes(&mf)).unwrap(),
-            mf.as_bytes()
-        );
+        assert_eq!(hur_manifest_bytes(&hur_bytes(&mf)).unwrap(), mf.as_bytes());
         // 裸 zip（老包）
         let plain = zip_stored(&[("hur.json", mf.as_bytes())]);
         assert_eq!(hur_manifest_bytes(&plain).unwrap(), mf.as_bytes());
@@ -1784,7 +1805,12 @@ mod tests {
         let zip = zip_one("hur.json", 8, &[0xf3, 0xf7, 0x06, 0x00], 2);
         assert_eq!(hur_manifest_bytes(&zip).unwrap(), b"OK");
         // 条目声明的原大小超上限 → 拒（连解压都不做）
-        let big = zip_one("hur.json", 8, &[0xf3, 0xf7, 0x06, 0x00], (MAX_CARD_MANIFEST + 1) as u32);
+        let big = zip_one(
+            "hur.json",
+            8,
+            &[0xf3, 0xf7, 0x06, 0x00],
+            (MAX_CARD_MANIFEST + 1) as u32,
+        );
         assert_eq!(
             hur_manifest_bytes(&big).unwrap_err(),
             "包里的 hur.json 过大（>64KB）"
@@ -1797,7 +1823,10 @@ mod tests {
         assert_eq!(parse_go_duration("1h30m").unwrap().num_minutes(), 90);
         assert_eq!(parse_go_duration("90s").unwrap().num_seconds(), 90);
         assert_eq!(parse_go_duration("0").unwrap().num_seconds(), 0);
-        assert!(parse_go_duration("7d").is_none(), "Go 的 ParseDuration 不认 d");
+        assert!(
+            parse_go_duration("7d").is_none(),
+            "Go 的 ParseDuration 不认 d"
+        );
         assert!(parse_go_duration("abc").is_none());
         assert!(parse_go_duration("").is_none());
 
@@ -1823,7 +1852,10 @@ mod tests {
         .await;
         assert_eq!(code, StatusCode::UNAUTHORIZED);
         assert_eq!(v["error"]["code"], "unauthorized");
-        assert_eq!(v["error"]["message"], "未认证或凭据无效（先 ncc login 或带 API-Key）");
+        assert_eq!(
+            v["error"]["message"],
+            "未认证或凭据无效（先 ncc login 或带 API-Key）"
+        );
 
         let (code, v) = call(&app, post_card(&secret, "", Vec::new())).await;
         assert_eq!(code, StatusCode::BAD_REQUEST);
@@ -1838,8 +1870,14 @@ mod tests {
         assert_eq!(v["card"]["agent"]["version"], "1.0.0");
         assert_eq!(v["card"]["agent"]["kind"], "agent");
         assert_eq!(v["card"]["agent"]["profile"], "default");
-        assert_eq!(v["card"]["agent"]["bytes"], hur_bytes(&manifest_json("demo", "1.0.0")).len() as i64);
-        assert_eq!(v["card"]["agent"]["blob"], format!("/api/agent-cards/{token}/blob"));
+        assert_eq!(
+            v["card"]["agent"]["bytes"],
+            hur_bytes(&manifest_json("demo", "1.0.0")).len() as i64
+        );
+        assert_eq!(
+            v["card"]["agent"]["blob"],
+            format!("/api/agent-cards/{token}/blob")
+        );
         assert_eq!(v["card"]["uses"], 0);
         assert_eq!(v["card"]["maxUses"], 2);
         assert_eq!(v["card"]["hasPassword"], false);
@@ -1854,7 +1892,10 @@ mod tests {
         assert!(exp.ends_with('Z') && exp.len() == 20, "{exp}");
         assert_eq!(v["url"], format!("http://localhost:8282/a/{token}"));
         assert_eq!(v["key"], "");
-        assert!(v["howto"]["agent"].as_str().unwrap().contains("ncc agent add"));
+        assert!(v["howto"]["agent"]
+            .as_str()
+            .unwrap()
+            .contains("ncc agent add"));
 
         // 库里只有哈希 + hint
         let row: (String, String, String) =
@@ -1871,7 +1912,10 @@ mod tests {
             .fetch_one(st.pool())
             .await
             .unwrap();
-        assert_eq!(st.blobs().get(&blob).unwrap(), hur_bytes(&manifest_json("demo", "1.0.0")));
+        assert_eq!(
+            st.blobs().get(&blob).unwrap(),
+            hur_bytes(&manifest_json("demo", "1.0.0"))
+        );
     }
 
     #[tokio::test]
@@ -1891,7 +1935,10 @@ mod tests {
         // 包里没有 hur.json
         let (code, v) = call(&app, bad(zip_stored(&[("a.txt", b"x")]), "")).await;
         assert_eq!(code, StatusCode::BAD_REQUEST);
-        assert_eq!(v["error"]["message"], "这不是一个 hur 包：包里没有 hur.json");
+        assert_eq!(
+            v["error"]["message"],
+            "这不是一个 hur 包：包里没有 hur.json"
+        );
         // hur.json 不是 JSON
         let (code, v) = call(&app, bad(hur_bytes("{不是 JSON"), "")).await;
         assert_eq!(code, StatusCode::BAD_REQUEST);
@@ -1954,10 +2001,17 @@ mod tests {
         let boundary = "----nccboundary";
         let mf = manifest_json("multi", "3.1.0");
         let mut body: Vec<u8> = Vec::new();
-        for (k, v) in [("name", "手工名字"), ("note", "备注"), ("key", "abc123"), ("uses", "3")] {
+        for (k, v) in [
+            ("name", "手工名字"),
+            ("note", "备注"),
+            ("key", "abc123"),
+            ("uses", "3"),
+        ] {
             body.extend_from_slice(
-                format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n")
-                    .as_bytes(),
+                format!(
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n"
+                )
+                .as_bytes(),
             );
         }
         body.extend_from_slice(
@@ -1971,7 +2025,10 @@ mod tests {
             .method("POST")
             .uri("/agent-cards")
             .header("authorization", format!("Bearer {secret}"))
-            .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
             .body(Body::from(body))
             .unwrap();
         let (code, v) = call(&app, req).await;
@@ -1981,7 +2038,13 @@ mod tests {
         assert_eq!(v["card"]["maxUses"], 3);
         assert_eq!(v["card"]["hasPassword"], true);
         assert_eq!(v["key"], "abc123", "口令只在创建这一刻回显");
-        let token = v["url"].as_str().unwrap().rsplit('/').next().unwrap().to_string();
+        let token = v["url"]
+            .as_str()
+            .unwrap()
+            .rsplit('/')
+            .next()
+            .unwrap()
+            .to_string();
         // 库里只有盐化哈希
         let (ph, ps): (String, String) =
             sqlx::query_as("SELECT pass_hash, pass_salt FROM agent_cards")
@@ -2069,19 +2132,26 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        assert_eq!(
-            resp.headers().get("x-ncc-agent").unwrap(),
-            "demo@1.0.0"
-        );
+        assert_eq!(resp.headers().get("x-ncc-agent").unwrap(), "demo@1.0.0");
         assert_eq!(
             resp.headers().get("content-disposition").unwrap(),
             "attachment; filename=\"demo-1.0.0.hur\""
         );
-        assert_eq!(resp.headers().get("x-robots-tag").unwrap(), "noindex, nofollow");
-        let expected_sha = ncc_core::crypto::sha256_hex(&hur_bytes(&manifest_json("demo", "1.0.0")));
-        assert_eq!(resp.headers().get("x-ncc-sha256").unwrap(), expected_sha.as_str());
         assert_eq!(
-            axum::body::to_bytes(resp.into_body(), 1 << 22).await.unwrap().to_vec(),
+            resp.headers().get("x-robots-tag").unwrap(),
+            "noindex, nofollow"
+        );
+        let expected_sha =
+            ncc_core::crypto::sha256_hex(&hur_bytes(&manifest_json("demo", "1.0.0")));
+        assert_eq!(
+            resp.headers().get("x-ncc-sha256").unwrap(),
+            expected_sha.as_str()
+        );
+        assert_eq!(
+            axum::body::to_bytes(resp.into_body(), 1 << 22)
+                .await
+                .unwrap()
+                .to_vec(),
             hur_bytes(&manifest_json("demo", "1.0.0"))
         );
         // 视图计数 +1
@@ -2138,7 +2208,10 @@ mod tests {
         .await;
         assert_eq!(code, StatusCode::GONE);
         assert_eq!(v["error"]["code"], "expired");
-        assert_eq!(v["error"]["message"], "这张名片已过有效期，请让作者重新生成一张");
+        assert_eq!(
+            v["error"]["message"],
+            "这张名片已过有效期，请让作者重新生成一张"
+        );
     }
 
     #[tokio::test]
@@ -2159,7 +2232,10 @@ mod tests {
         )
         .await;
         assert_eq!(code, StatusCode::UNAUTHORIZED);
-        assert_eq!(v["error"]["message"], "未认证或凭据无效（先 ncc login 或带 API-Key）");
+        assert_eq!(
+            v["error"]["message"],
+            "未认证或凭据无效（先 ncc login 或带 API-Key）"
+        );
 
         // 第一次：扣到 1，剩余 0
         let (code, v) = call(
@@ -2247,11 +2323,17 @@ mod tests {
 
         let (code, v) = call(
             &app,
-            Request::builder().uri("/agent-cards").body(Body::empty()).unwrap(),
+            Request::builder()
+                .uri("/agent-cards")
+                .body(Body::empty())
+                .unwrap(),
         )
         .await;
         assert_eq!(code, StatusCode::UNAUTHORIZED);
-        assert_eq!(v["error"]["message"], "未认证或凭据无效（先 ncc login 或带 API-KEY）");
+        assert_eq!(
+            v["error"]["message"],
+            "未认证或凭据无效（先 ncc login 或带 API-KEY）"
+        );
 
         let (code, v) = call(
             &app,
@@ -2329,7 +2411,10 @@ mod tests {
         )
         .await;
         assert_eq!(code, StatusCode::UNAUTHORIZED);
-        assert_eq!(v["error"]["message"], "未认证或凭据无效（先 ncc login 或带 API-KEY）");
+        assert_eq!(
+            v["error"]["message"],
+            "未认证或凭据无效（先 ncc login 或带 API-KEY）"
+        );
 
         // 按 id（AC-…）也能撤
         let id: String = sqlx::query_scalar("SELECT id FROM agent_cards")
@@ -2395,22 +2480,34 @@ mod tests {
             "noindex, nofollow"
         );
         let html = String::from_utf8(
-            axum::body::to_bytes(resp.into_body(), 1 << 22).await.unwrap().to_vec(),
+            axum::body::to_bytes(resp.into_body(), 1 << 22)
+                .await
+                .unwrap()
+                .to_vec(),
         )
         .unwrap();
         assert!(html.contains("名字 demo"), "{html}");
         assert!(html.contains("周八 通过本内网节点分享了一个 Agent 给你"));
-        assert!(html.contains(&format!("ncc agent add &#39;http://localhost:8282/a/{token}&#39;")));
+        assert!(html.contains(&format!(
+            "ncc agent add &#39;http://localhost:8282/a/{token}&#39;"
+        )));
         assert!(html.contains("（这张名片只有包，不附带节点）"));
 
         // 不存在
         let resp = app
             .clone()
-            .oneshot(Request::builder().uri("/a/nope").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/a/nope")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-        let body = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .unwrap();
         assert_eq!(&body[..], "名片不存在".as_bytes());
 
         // 设了口令 → 解锁页
@@ -2426,7 +2523,10 @@ mod tests {
             .await
             .unwrap();
         let html = String::from_utf8(
-            axum::body::to_bytes(resp.into_body(), 1 << 22).await.unwrap().to_vec(),
+            axum::body::to_bytes(resp.into_body(), 1 << 22)
+                .await
+                .unwrap()
+                .to_vec(),
         )
         .unwrap();
         assert!(html.contains("需要访问 key"), "{html}");
@@ -2447,7 +2547,10 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let html = String::from_utf8(
-            axum::body::to_bytes(resp.into_body(), 1 << 22).await.unwrap().to_vec(),
+            axum::body::to_bytes(resp.into_body(), 1 << 22)
+                .await
+                .unwrap()
+                .to_vec(),
         )
         .unwrap();
         assert!(html.contains("key 不正确，请重试"));
@@ -2466,7 +2569,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::SEE_OTHER);
-        assert_eq!(resp.headers().get("location").unwrap(), &format!("/a/{ptoken}"));
+        assert_eq!(
+            resp.headers().get("location").unwrap(),
+            &format!("/a/{ptoken}")
+        );
         let cookie = resp
             .headers()
             .get("set-cookie")
@@ -2491,7 +2597,10 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let html = String::from_utf8(
-            axum::body::to_bytes(resp.into_body(), 1 << 22).await.unwrap().to_vec(),
+            axum::body::to_bytes(resp.into_body(), 1 << 22)
+                .await
+                .unwrap()
+                .to_vec(),
         )
         .unwrap();
         assert!(html.contains("名字 demo"));
@@ -2520,7 +2629,10 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::GONE);
         let html = String::from_utf8(
-            axum::body::to_bytes(resp.into_body(), 1 << 22).await.unwrap().to_vec(),
+            axum::body::to_bytes(resp.into_body(), 1 << 22)
+                .await
+                .unwrap()
+                .to_vec(),
         )
         .unwrap();
         assert!(html.contains("这张名片已被作者撤销"));
@@ -2575,7 +2687,10 @@ mod tests {
         .await;
         assert_eq!(code, StatusCode::FORBIDDEN);
         assert_eq!(v["error"]["code"], "grant_required");
-        assert!(v["error"]["message"].as_str().unwrap().contains("不是公开节点"));
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("不是公开节点"));
         // node=none：Go 不解析节点，但**照样把 "none" 存进 node_ref** —— 于是视图里
         // 会出现一个 ref="none" 的 node 块（这是 Go 的行为，照搬不改）。
         let (_t4, v4) = create_card(&app, &secret, "?node=none").await;

@@ -45,7 +45,10 @@ async fn mine(State(state): State<AppState>, auth: Auth) -> ApiResult<Response> 
     let nss = store::namespaces::of_user(state.pool(), &a.user_id)
         .await
         .map_err(ApiError::from_db)?;
-    let list: Vec<_> = nss.iter().map(|n| ns_view(n, n.owner_id == a.user_id)).collect();
+    let list: Vec<_> = nss
+        .iter()
+        .map(|n| ns_view(n, n.owner_id == a.user_id))
+        .collect();
     Ok(ncc_core::error::ok(json!({"namespaces": list})))
 }
 

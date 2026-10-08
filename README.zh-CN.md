@@ -6,23 +6,29 @@
 「**节点托管**」「**Agent 发现与互联**」「**节点治理**」收在一个进程里，
 并支持**多节点**（一个 `master` + 若干 `worker`）横向铺开。
 
-> **Rust 重写版（进行中）**：[`rust/`](rust/) 用 axum + tokio + sqlx 重新实现了本节点
-> （二进制名同样是 `ncc-registry`，两者可以直接对换）。它可以直接开在**现有**的
-> `ncc-registry.db` 上（老库缺的列启动时自动补），并与这份 Go 版**双向互通** ——
-> 同一套令牌、同一套口令哈希、同一套响应形状、同一个 `enc:v1:` 加密盒。
-> 已迁移的端点与剩余清单见 [`rust/README.md`](rust/README.md)。
+> **Rust 实现**：[`rust/`](rust/) 就是本节点的实现（axum + tokio + sqlx，二进制名 `ncc-registry`）。
+> 它可以直接开在**现有**的 `ncc-registry.db` 上（老库缺的列启动时自动补）——
+> 同一套令牌、同一套口令哈希、同一套响应形状、同一个 `enc:v1:` 加密盒，
+> 也就是说：已经在跑的老数据目录，换成这个二进制即可，不用导数据。
+> 迁移进度与已知取舍见 [`rust/README.md`](rust/README.md)。
 
-它属于 [`ncc`](https://github.com/fusedmodel/ncc) 这个开源/可分发的部分：Go 单二进制、SQLite 单文件、
+它属于 [`ncc`](https://github.com/fusedmodel/ncc) 这个开源/可分发的部分：Rust 单二进制、SQLite 单文件、
 内置 Web 控制台，不依赖平台私有代码，也不引入外部数据库或对象存储就能跑。
 变更历史见本仓库的 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ```bash
-go build -o dist/ncc-registry ./cmd/ncc-registry
-NCCR_PORT=8282 ./dist/ncc-registry          # → http://localhost:8282
+cd rust && cargo build --release
+NCCR_PORT=8282 ./target/release/ncc-registry          # → http://localhost:8282
+# 或者装到本机：cargo install --path rust/crates/ncc-registry
 ```
 
-它同时是一个**可被 import 的 Go 库**（`module github.com/fusedmodel/ncc-registry`）——
-想在自己的进程里起一个内网 Registry，见下方[「作为 Go 库使用」](#作为-go-库使用)。
+它是一个 **Rust 工作区** —— `ncc-core`（可复用的基础层）+ `ncc-registry`（服务本体）——
+想在自己进程里嵌一部分，见下方[「作为库使用」](#作为库使用)。
+
+**构建要求**：Rust 1.85+（用 rustup 装即可），外加一个 C 编译器（`cc` / `clang`）——
+sqlx 的 SQLite 驱动会编译 bundled 的 sqlite3 源码，所以机器上得有 C 工具链。
+也可以用现成的 Docker 镜像，或 Release 里的预编译二进制（`ncc-registry-<os>-<arch>` + `checksums.txt`）。
+不需要外部数据库、对象存储，也不依赖其它 NCC 组件。
 
 ## 两件事（能力总表）
 
@@ -75,8 +81,8 @@ flowchart TB
 
 ```bash
 cd ncc-registry
-go build -o dist/ncc-registry ./cmd/ncc-registry
-NCCR_DATA_DIR=./data ./dist/ncc-registry          # master，默认 :8282
+cargo build --release --manifest-path rust/Cargo.toml
+NCCR_DATA_DIR=./data rust/target/release/ncc-registry   # master，默认 :8282
 # 控制台 http://localhost:8282（含「节点管理」区块）
 ```
 
@@ -85,12 +91,12 @@ NCCR_DATA_DIR=./data ./dist/ncc-registry          # master，默认 :8282
 ```bash
 # 终端 1：master
 NCCR_PORT=8282 NCCR_DATA_DIR=./data/master NCCR_NODE_NAME=office-master \
-  NCCR_NODE_REGION=上海-内网 ./dist/ncc-registry
+  NCCR_NODE_REGION=上海-内网 rust/target/release/ncc-registry
 
 # 终端 2：worker（在另一台机器上就用它的内网 IP）
 NCCR_ROLE=worker NCCR_PORT=8283 NCCR_DATA_DIR=./data/worker-a \
   NCCR_NODE_NAME=office-worker-a NCCR_NODE_REGION=上海-内网 \
-  NCCR_MASTER_URL=http://127.0.0.1:8282 NCCR_HEARTBEAT=15s ./dist/ncc-registry
+  NCCR_MASTER_URL=http://127.0.0.1:8282 NCCR_HEARTBEAT=15s rust/target/release/ncc-registry
 ```
 
 worker 启动即 `join`，之后每 `NCCR_HEARTBEAT` 心跳一次，把本地目录一并报上去。
@@ -414,6 +420,7 @@ ncc registry rm @alice/x --yes                                         # 下架 
 | `NCCR_NODE_TTL` | `60s` | 托管节点/worker 的在线判定窗口（master 按 `4×` 清理 worker） |
 | `NCCR_INVITE_CODE` | 空 | 空 = 内网开放注册；设了则注册必须带邀请码（逗号分隔多个） |
 | `NCCR_CONSOLE` | `true` | 是否托管内置 Web 控制台 |
+| `NCCR_CONSOLE_DIR` | `./web` | 控制台从哪个目录托管（**不再 embed**；仓库里它在 `rust/web`）。目录不存在就只不挂这条路由，API 不受影响 |
 | `NCCR_P2P_SERVE` | `false` | 随服务开启**可被打洞入口**（一个 UDP socket，只应答 STUN Binding；默认关） |
 | `NCCR_P2P_STUN` | 内置多台 | STUN 列表（逗号分隔）—— 用自己的可达 STUN，NAT 画像与打洞都靠它 |
 | `NCCR_P2P_TURN` | 空 | 自托管 TURN 列表。**红线**：TURN 必须客户自托管 —— 云端托管面不进数据路径 |
@@ -594,7 +601,8 @@ ncc ckpt prune --ref @alice/agent --keep 5
 
 ## Web 控制台
 
-`GET /` 是内置的单文件控制台（`httpapi/web/index.html`，随二进制 embed，无构建步骤）：
+`GET /` 是内置的单文件控制台（`rust/web/index.html`，运行时按目录托管 ——
+`NCCR_CONSOLE_DIR` 指向它，默认 `./web`，无构建步骤）：
 本节点身份与规模、集群 worker 列表（在线状态 / 制品数 / 最近心跳）、聚合目录（可搜索）、
 托管节点发现（含区域覆盖）、**节点管理（管理员）**（填 admin key/secret 后可在网页里禁用账号、
 重置密码、摘除节点、归档服务条目、撤销分享、轮换凭据），以及 CLI / HTTP 的接入速查。
@@ -608,10 +616,15 @@ cd deploy
 docker compose up -d --build            # master :8282，worker :8283
 ```
 
+镜像的构建上下文是**仓库根**（Dockerfile 在 `deploy/Dockerfile`，多阶段：`rust:1-bookworm`
+编译 + `debian:bookworm-slim` 运行），发布名没变，仍是 `ghcr.io/fusedmodel/ncc-registry`。
 `deploy/docker-compose.yml` 里两个服务共用同一镜像、不同 `NCCR_ROLE`；
 数据分别落在具名卷里。生产上把 worker 部署到各内网机器，`NCCR_MASTER_URL` 指向 master 即可。
 
 ### 裸二进制 / systemd
+
+装二进制用 `cargo install --path rust/crates/ncc-registry`（或 `cargo build --release` 后把
+`rust/target/release/ncc-registry` 拷到 `/usr/local/bin/`）—— 就一个自带的二进制，机器上不需要别的：
 
 ```bash
 NCCR_DATA_DIR=/var/lib/ncc-registry \
@@ -623,68 +636,20 @@ NCCR_CLUSTER_TOKEN=<随机串> \
 
 单进程 + 单文件目录：备份 = 打包 `NCCR_DATA_DIR`（库 + `blobs/` + `node-id` + `jwt-secret`）。
 
-## 作为 Go 库使用
+## 作为库使用
 
-```bash
-go get github.com/fusedmodel/ncc-registry
-```
+这一版**没有承诺稳定的库 API** —— 不像更早的 Go 版，代码是按「先服务本体」组织的。
+能给你的是工作区一分为二，两个 crate 都在 `rust/crates/` 下：
 
-公开包（`p2p` / `secretbox` 是内部实现，不对外）：
-
-| 包 | 作用 |
+| crate | 作用 |
 |---|---|
-| `config` | `Load()` 读 `NCCR_*` 环境变量（目录 / 身份 / 密钥都会落盘），也可自己填 `Config` 结构体 |
-| `model` | 全部资源模型（用户 / 制品 / 节点 / 配置 / 分享 / 授权…） |
-| `store` | `Open(path)` 打开 SQLite 并自动迁移；所有读写方法都挂在 `*Store` 上 |
-| `storage` | `Storage` 接口 + `NewLocal` 本地磁盘驱动（换成 S3/Ceph 实现同一接口即可） |
-| `httpapi` | `NewServer` / `NewRouter` —— 把上述几样组装成 HTTP 服务 |
+| `ncc-core` | 两个服务共用的基础层：`NCCR_*` 配置、ID、错误、作用域、密码学（HS256 JWT / bcrypt / `enc:v1:` 加密盒）、字节存储，以及打开库并补列迁移 |
+| `ncc-registry` | 服务本体 —— `router` / `httpapi` / `store`：HTTP 面、处理器、SQLite 读写；二进制名同样是 `ncc-registry` |
 
-最小嵌入（自己控配置、自己管生命周期）：
-
-```go
-package main
-
-import (
-	"log"
-	"net/http"
-
-	"github.com/fusedmodel/ncc-registry/config"
-	"github.com/fusedmodel/ncc-registry/httpapi"
-	"github.com/fusedmodel/ncc-registry/storage"
-	"github.com/fusedmodel/ncc-registry/store"
-)
-
-func main() {
-	// ① 想沿用环境变量就用 config.Load()，想自己造就直接填结构体。
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	st, err := store.Open(cfg.DBPath) // 内含 AutoMigrate，建表不用另做
-	if err != nil {
-		log.Fatal(err)
-	}
-	blob, err := storage.NewLocal(cfg.BlobDir, cfg.PublicURL)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// ② NewServer 返回句柄 + 路由。句柄是用来在退出时收后台资源的
-	//    （集群心跳 / 过期 worker 清理 / 可被打洞入口），别丢。
-	srv, handler := httpapi.NewServer(cfg, st, blob)
-	defer srv.Close() // 可重复调用；不关数据库 —— 谁 open 谁 close
-
-	log.Fatal(http.ListenAndServe(cfg.Addr, handler))
-}
-```
-
-想挂在自己的路由树里、或者只用一部分能力（比如只要 `store` 读写、
-不要它自带的 HTTP 面），就按需取用上表里的包 —— 它们之间没有隐藏的全局状态。
-
-> 注意：`NewRouter` 是 `NewServer` 的薄包装，只返回路由、不返回句柄。
-> 进程退出时无所谓；但**反复创建**（测试、多实例）请用 `NewServer` + `Close`，
-> 否则后台循环会一直漏。
+想在自己的进程里起一个内网 Registry，就依赖 `ncc-core`，并直接复用
+`rust/crates/ncc-registry/src/{router,httpapi,store}`。这些模块目前就是普通的 Rust 模块：
+没有 `lib` target、没有语义化版本承诺、也没有废弃策略。按需把 `ncc-registry` 拆成
+`lib` + 薄 `bin` 是受欢迎的 —— 上面这个分层本来就是按这个打算摆的，而 `ncc-core` 本身已经是库了。
 
 ## 冒烟测试
 
@@ -725,7 +690,7 @@ Windows 绝对路径（`C:\Users\…`），属脚本的路径显示差异，不�
 - **制品签名与版本锁定**：目前是 `sha256` 校验 + 版本号，未做发布者签名。
 - **字节面增强**：本地磁盘 → S3 兼容对象存储（Ceph RGW / MinIO）；worker 侧缓存策略与失效。
 - **跨网互联**：目前是同内网直连 HTTP；跨网需要打洞/中继。选型与实测已收敛：
-  `pion/webrtc` + 控制面信令 + 客户自托管 TURN，见 `ncc` 仓库的 `prd/ncc-p2p-data.md`
+  `webrtc-rs` + 控制面信令 + 客户自托管 TURN，见 `ncc` 仓库的 `prd/ncc-p2p-data.md`
   （实验装置在同一个仓库的 `spike/p2p-transport/`，本机实测直连建连 ~90ms / ~50 MB/s、relay-only 建连 ~2s）。
   **本节点已具备 P2P 判断面**：`/api/p2p/self|check|serve`（CLI：`ncc registry p2p self|check|serve`，
   `NCCR_P2P_SERVE=1` 随服务开入口）—— 在这台机器上出 NAT 画像、与对端映射真实对打、并可选开一个

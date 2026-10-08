@@ -44,7 +44,11 @@ pub struct ArtifactRow {
 impl ArtifactRow {
     /// 规范引用 `@ns/slug`。
     pub fn ref_of(&self) -> String {
-        format!("@{}/{}", self.ns_slug.clone().unwrap_or_default(), self.slug)
+        format!(
+            "@{}/{}",
+            self.ns_slug.clone().unwrap_or_default(),
+            self.slug
+        )
     }
 
     /// 是不是别人分发过来的副本。
@@ -164,7 +168,10 @@ pub async fn by_id(pool: &SqlitePool, id: &str) -> Result<Option<ArtifactRow>, s
     let sql = format!(
         "SELECT {SELECT_COLS} FROM artifacts a LEFT JOIN namespaces n ON n.id = a.namespace_id WHERE a.id = ?"
     );
-    sqlx::query_as::<_, ArtifactRow>(&sql).bind(id).fetch_optional(pool).await
+    sqlx::query_as::<_, ArtifactRow>(&sql)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
 }
 
 pub async fn by_ns_slug(
@@ -200,7 +207,11 @@ pub async fn by_ref(pool: &SqlitePool, r: &str) -> Result<Option<ArtifactRow>, s
     by_id(pool, r).await
 }
 
-pub async fn exists_ns_slug(pool: &SqlitePool, ns_id: &str, slug: &str) -> Result<bool, sqlx::Error> {
+pub async fn exists_ns_slug(
+    pool: &SqlitePool,
+    ns_id: &str,
+    slug: &str,
+) -> Result<bool, sqlx::Error> {
     exists(
         pool,
         "SELECT COUNT(*) FROM artifacts WHERE namespace_id = ? AND slug = ?",
@@ -340,10 +351,13 @@ pub async fn delete(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
 }
 
 /// 按 kind 统计（`/api/registry/kinds`）。
-pub async fn kind_counts(pool: &SqlitePool) -> Result<std::collections::HashMap<String, i64>, sqlx::Error> {
-    let rows: Vec<(String, i64)> = sqlx::query_as("SELECT kind, COUNT(*) FROM artifacts GROUP BY kind")
-        .fetch_all(pool)
-        .await?;
+pub async fn kind_counts(
+    pool: &SqlitePool,
+) -> Result<std::collections::HashMap<String, i64>, sqlx::Error> {
+    let rows: Vec<(String, i64)> =
+        sqlx::query_as("SELECT kind, COUNT(*) FROM artifacts GROUP BY kind")
+            .fetch_all(pool)
+            .await?;
     Ok(rows.into_iter().collect())
 }
 
@@ -376,7 +390,9 @@ mod tests {
 
     async fn pool() -> SqlitePool {
         let p = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        ncc_core::pool::migrate(&p, crate::schema::DDL).await.unwrap();
+        ncc_core::pool::migrate(&p, crate::schema::DDL)
+            .await
+            .unwrap();
         p
     }
 
@@ -407,13 +423,25 @@ mod tests {
         let ns = crate::store::namespaces::create_account(&p, "U-1", "张三", "zhangsan")
             .await
             .unwrap();
-        let a = create(&p, new_art(&ns.id, "demo", "published", "public")).await.unwrap();
+        let a = create(&p, new_art(&ns.id, "demo", "published", "public"))
+            .await
+            .unwrap();
         assert_eq!(a.ref_of(), "@zhangsan/demo");
         assert!(!a.is_replica());
         assert!(a.is_public_published());
         assert_eq!(tags_of(&a), vec!["a"]);
-        assert_eq!(by_ref(&p, "@zhangsan/demo").await.unwrap().unwrap().id, a.id);
-        assert_eq!(by_ref(&p, "@zhangsan/demo@1.0.0").await.unwrap().unwrap().id, a.id);
+        assert_eq!(
+            by_ref(&p, "@zhangsan/demo").await.unwrap().unwrap().id,
+            a.id
+        );
+        assert_eq!(
+            by_ref(&p, "@zhangsan/demo@1.0.0")
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            a.id
+        );
         assert_eq!(by_ref(&p, &a.id).await.unwrap().unwrap().id, a.id);
         assert!(by_ref(&p, "@nobody/x").await.unwrap().is_none());
         assert_eq!(count(&p).await.unwrap(), 1);
@@ -422,14 +450,27 @@ mod tests {
     #[tokio::test]
     async fn 列表可见性与筛选() {
         let p = pool().await;
-        let ns = crate::store::namespaces::create_account(&p, "U-1", "张三", "zs").await.unwrap();
-        create(&p, new_art(&ns.id, "pub", "published", "public")).await.unwrap();
-        create(&p, new_art(&ns.id, "draft", "draft", "public")).await.unwrap();
-        create(&p, new_art(&ns.id, "priv", "published", "private")).await.unwrap();
+        let ns = crate::store::namespaces::create_account(&p, "U-1", "张三", "zs")
+            .await
+            .unwrap();
+        create(&p, new_art(&ns.id, "pub", "published", "public"))
+            .await
+            .unwrap();
+        create(&p, new_art(&ns.id, "draft", "draft", "public"))
+            .await
+            .unwrap();
+        create(&p, new_art(&ns.id, "priv", "published", "private"))
+            .await
+            .unwrap();
 
         let public = list(
             &p,
-            &ListOpts { public_only: true, page: 1, size: 20, ..Default::default() },
+            &ListOpts {
+                public_only: true,
+                page: 1,
+                size: 20,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -438,7 +479,12 @@ mod tests {
 
         let mine = list(
             &p,
-            &ListOpts { namespace_ids: vec![ns.id.clone()], page: 1, size: 20, ..Default::default() },
+            &ListOpts {
+                namespace_ids: vec![ns.id.clone()],
+                page: 1,
+                size: 20,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -446,7 +492,12 @@ mod tests {
 
         let by_tag = list(
             &p,
-            &ListOpts { tag: "a".to_string(), page: 1, size: 20, ..Default::default() },
+            &ListOpts {
+                tag: "a".to_string(),
+                page: 1,
+                size: 20,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -454,7 +505,12 @@ mod tests {
 
         let by_q = list(
             &p,
-            &ListOpts { q: "名字 pub".to_string(), page: 1, size: 20, ..Default::default() },
+            &ListOpts {
+                q: "名字 pub".to_string(),
+                page: 1,
+                size: 20,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -464,9 +520,15 @@ mod tests {
     #[test]
     fn 字节对象名解析() {
         assert_eq!(
-            blob_name_from_url("http://localhost:8282", "http://localhost:8282/blobs/a/b.hur"),
+            blob_name_from_url(
+                "http://localhost:8282",
+                "http://localhost:8282/blobs/a/b.hur"
+            ),
             "a/b.hur"
         );
-        assert_eq!(blob_name_from_url("http://x", "https://cdn.example/e.hur"), "");
+        assert_eq!(
+            blob_name_from_url("http://x", "https://cdn.example/e.hur"),
+            ""
+        );
     }
 }

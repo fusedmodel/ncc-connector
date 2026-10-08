@@ -34,3 +34,5 @@ uuid.workspace = true
 regex.workspace = true
 mime_guess.workspace = true
 bytes.workspace = true
+reqwest.workspace = true
+futures-util.workspace = true

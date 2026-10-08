@@ -26,7 +26,15 @@ use crate::store;
 
 /// 制品类型词表（与 CLI / 平台目录保持一致）。
 pub const ARTIFACT_KINDS: &[&str] = &[
-    "api", "harness", "hur", "skill", "mcp", "plugin", "scaffold", "docker-image", "benchmark",
+    "api",
+    "harness",
+    "hur",
+    "skill",
+    "mcp",
+    "plugin",
+    "scaffold",
+    "docker-image",
+    "benchmark",
     "living",
 ];
 
@@ -35,7 +43,10 @@ fn kind_meta(k: &str) -> (&'static str, &'static str) {
     match k {
         "api" => ("API", "可调用的服务接口"),
         "harness" => ("Harness", "按契约可装载的能力封装（含 loader/entry）"),
-        "hur" => ("HUR", "Harness-Use Runtime 官方包（kind=agent 的包就是一个 Agent）"),
+        "hur" => (
+            "HUR",
+            "Harness-Use Runtime 官方包（kind=agent 的包就是一个 Agent）",
+        ),
         "skill" => ("Skill", "给 Agent 的操作手册（SKILL.md）"),
         "mcp" => ("MCP", "Model Context Protocol 服务"),
         "plugin" => ("Plugin", "宿主应用的插件"),
@@ -57,7 +68,10 @@ pub fn routes() -> Router<AppState> {
         .route("/registry/uploads", post(upload))
         .route("/registry", get(list).post(create_item))
         .route("/registry/", get(list).post(create_item))
-        .route("/registry/{id}", get(get_item).patch(patch_item).delete(delete_item))
+        .route(
+            "/registry/{id}",
+            get(get_item).patch(patch_item).delete(delete_item),
+        )
         .route(
             "/registry/{id}/{slug}",
             get(get_item).patch(patch_item).delete(delete_item),
@@ -86,7 +100,11 @@ pub async fn can_manage(state: &AppState, ns_id: &str, user_id: &str) -> bool {
 }
 
 /// 能否读到这份制品。
-pub async fn can_read(state: &AppState, row: &store::artifacts::ArtifactRow, user_id: &str) -> bool {
+pub async fn can_read(
+    state: &AppState,
+    row: &store::artifacts::ArtifactRow,
+    user_id: &str,
+) -> bool {
     if row.is_public_published() {
         return true;
     }
@@ -221,11 +239,17 @@ async fn kinds(State(state): State<AppState>) -> ApiResult<Response> {
             })
         })
         .collect();
-    Ok(helpers::ok_json(json!({"kinds": list, "total": list.len()})))
+    Ok(helpers::ok_json(
+        json!({"kinds": list, "total": list.len()}),
+    ))
 }
 
 /// GET /api/registry?q&kind&tag&namespace&mine&page&size&sort&status
-async fn list(State(state): State<AppState>, auth: Auth, uri: axum::http::Uri) -> ApiResult<Response> {
+async fn list(
+    State(state): State<AppState>,
+    auth: Auth,
+    uri: axum::http::Uri,
+) -> ApiResult<Response> {
     let page = web::query_i64(&uri, "page", 1);
     let size = web::query_i64(&uri, "size", 20);
     let ns_slug = web::query(&uri, "namespace").unwrap_or_default();
@@ -302,7 +326,7 @@ async fn list(State(state): State<AppState>, auth: Auth, uri: axum::http::Uri) -
 async fn get_item(
     State(state): State<AppState>,
     auth: Auth,
-    Path((id, slug)): Path<(String, Option<String>)>,
+    Path(helpers::IdSlug { id, slug }): Path<helpers::IdSlug>,
 ) -> ApiResult<Response> {
     let ref_ = ref_from_params(&id, slug.as_deref());
     let uid = auth.user_id().unwrap_or_default();
@@ -316,7 +340,7 @@ async fn get_item(
 async fn download(
     State(state): State<AppState>,
     auth: Auth,
-    Path((id, slug)): Path<(String, Option<String>)>,
+    Path(helpers::IdSlug { id, slug }): Path<helpers::IdSlug>,
 ) -> ApiResult<Response> {
     let ref_ = ref_from_params(&id, slug.as_deref());
     let uid = auth.user_id().unwrap_or_default();
@@ -344,7 +368,7 @@ async fn download(
 async fn bytes(
     State(state): State<AppState>,
     auth: Auth,
-    Path((id, slug)): Path<(String, Option<String>)>,
+    Path(helpers::IdSlug { id, slug }): Path<helpers::IdSlug>,
     uri: axum::http::Uri,
 ) -> ApiResult<Response> {
     let ref_ = ref_from_params(&id, slug.as_deref());
@@ -353,7 +377,9 @@ async fn bytes(
         .await
         .map_err(ApiError::from_db)?;
     let Some(row) = some else {
-        return Err(ApiError::not_found("字节不存在（本节点与集群目录里都没有）"));
+        return Err(ApiError::not_found(
+            "字节不存在（本节点与集群目录里都没有）",
+        ));
     };
     let uid = auth.user_id().unwrap_or_default();
     let exp = web::query(&uri, "exp").unwrap_or_default();
@@ -410,7 +436,11 @@ async fn upload(
         ext = ext[..16].to_string();
     }
     let uid = &a.user_id;
-    let short = if uid.len() > 6 { &uid[uid.len() - 6..] } else { uid.as_str() };
+    let short = if uid.len() > 6 {
+        &uid[uid.len() - 6..]
+    } else {
+        uid.as_str()
+    };
     let name = format!("{short}-{}{ext}", ncc_core::crypto::rand_hex(6));
 
     let url = state
@@ -452,6 +482,10 @@ struct CreateItemReq {
     namespace_id: String,
     #[serde(default)]
     storage: StorageRef,
+    /// 分发规格：`"all"` 或 `["worker 名称/id"]`。给了就让这些节点也持有副本。
+    /// 与 Go 的 `body.Replicate`（`*any`）同义：**不给 / null = 不分发**。
+    #[serde(default)]
+    replicate: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -465,7 +499,10 @@ struct StorageRef {
 }
 
 /// 校验 HUR 清单：制品必须自描述，否则分不清「这份签名是不是这份产物的」。
-fn validate_hur_manifest(manifest: &serde_json::Value, uploaded_sha: &str) -> Result<(), (String, String)> {
+fn validate_hur_manifest(
+    manifest: &serde_json::Value,
+    uploaded_sha: &str,
+) -> Result<(), (String, String)> {
     let art = manifest.get("hur").and_then(|h| h.get("artifact"));
     let Some(art) = art else {
         return Err((
@@ -523,7 +560,9 @@ async fn create_item(
         store::namespaces::personal(state.pool(), &a.user_id)
             .await
             .map_err(ApiError::from_db)?
-            .ok_or_else(|| ApiError::bad_request("bad_request", "当前账号没有个人命名空间，请重新注册"))?
+            .ok_or_else(|| {
+                ApiError::bad_request("bad_request", "当前账号没有个人命名空间，请重新注册")
+            })?
     } else {
         store::namespaces::by_id(state.pool(), body.namespace_id.trim())
             .await
@@ -551,8 +590,16 @@ async fn create_item(
         ));
     }
 
-    let status = if body.status == "published" { "published" } else { "draft" };
-    let visibility = if body.visibility == "private" { "private" } else { "public" };
+    let status = if body.status == "published" {
+        "published"
+    } else {
+        "draft"
+    };
+    let visibility = if body.visibility == "private" {
+        "private"
+    } else {
+        "public"
+    };
     let version = if body.version.trim().is_empty() {
         "1.0.0".to_string()
     } else {
@@ -587,7 +634,8 @@ async fn create_item(
         }
     }
 
-    let blob_name = store::artifacts::blob_name_from_url(&state.cfg().public_url, &body.storage.url);
+    let blob_name =
+        store::artifacts::blob_name_from_url(&state.cfg().public_url, &body.storage.url);
     let provider = if blob_name.is_empty() { "url" } else { "local" };
 
     let row = store::artifacts::create(
@@ -614,10 +662,22 @@ async fn create_item(
     .await
     .map_err(ApiError::from_db)?;
 
-    Ok(helpers::ok_status(
-        StatusCode::CREATED,
-        json!({"item": artifact_json(&row)}),
-    ))
+    let mut out = json!({"item": artifact_json(&row)});
+    // 分发（对齐 Go 的 `createItem`）：master 是发布入口，`--replicate all|<worker>`
+    // 让指定节点也留一份副本。任一目标失败只写进 `replicated[]`，不影响创建本身成功 ——
+    // 「发布」与「分发」是两件事，别让分发失败把已经落库的条目说成没发出去。
+    if let Some(spec) = body.replicate.as_ref().filter(|v| !v.is_null()) {
+        if let Ok(targets) = store::cluster::list_workers(state.pool()).await {
+            match crate::httpapi::cluster::pick_workers(&targets, Some(spec)) {
+                Ok(picked) => {
+                    out["replicated"] =
+                        json!(crate::httpapi::cluster::fanout(&state, &row, &picked).await);
+                }
+                Err(e) => out["replicateError"] = json!(e),
+            }
+        }
+    }
+    Ok(helpers::ok_status(StatusCode::CREATED, out))
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -644,7 +704,7 @@ struct PatchItemReq {
 async fn patch_item(
     State(state): State<AppState>,
     auth: Auth,
-    Path((id, slug)): Path<(String, Option<String>)>,
+    Path(helpers::IdSlug { id, slug }): Path<helpers::IdSlug>,
     Json(body): Json<PatchItemReq>,
 ) -> ApiResult<Response> {
     let a = auth.require_scope("registry:publish")?;
@@ -678,13 +738,19 @@ async fn patch_item(
     }
     if let Some(v) = body.status {
         if !matches!(v.as_str(), "draft" | "published" | "archived") {
-            return Err(ApiError::bad_request("bad_request", "status 只能是 draft/published/archived"));
+            return Err(ApiError::bad_request(
+                "bad_request",
+                "status 只能是 draft/published/archived",
+            ));
         }
         p.status = Some(v);
     }
     if let Some(v) = body.visibility {
         if !matches!(v.as_str(), "public" | "private") {
-            return Err(ApiError::bad_request("bad_request", "visibility 只能是 public/private"));
+            return Err(ApiError::bad_request(
+                "bad_request",
+                "visibility 只能是 public/private",
+            ));
         }
         p.visibility = Some(v);
     }
@@ -722,7 +788,7 @@ async fn patch_item(
 async fn attach_signature(
     State(state): State<AppState>,
     auth: Auth,
-    Path((id, slug)): Path<(String, Option<String>)>,
+    Path(helpers::IdSlug { id, slug }): Path<helpers::IdSlug>,
     Json(sig): Json<serde_json::Value>,
 ) -> ApiResult<Response> {
     let a = auth.require_scope("registry:publish")?;
@@ -753,9 +819,9 @@ async fn attach_signature(
     if manifest.is_null() {
         manifest = json!({});
     }
-    let obj = manifest
-        .as_object_mut()
-        .ok_or_else(|| ApiError::bad_request("bad_manifest", "现有 manifest 不是对象，无法附加签名"))?;
+    let obj = manifest.as_object_mut().ok_or_else(|| {
+        ApiError::bad_request("bad_manifest", "现有 manifest 不是对象，无法附加签名")
+    })?;
     obj.insert("signature".to_string(), sig);
 
     let p = store::artifacts::Patch {
@@ -778,7 +844,7 @@ async fn attach_signature(
 async fn delete_item(
     State(state): State<AppState>,
     auth: Auth,
-    Path((id, slug)): Path<(String, Option<String>)>,
+    Path(helpers::IdSlug { id, slug }): Path<helpers::IdSlug>,
 ) -> ApiResult<Response> {
     let a = auth.require_scope("registry:publish")?;
     let ref_ = ref_from_params(&id, slug.as_deref());
@@ -796,7 +862,13 @@ async fn delete_item(
     if row.storage_provider == "local" && !row.blob_name.is_empty() {
         let _ = state.blobs().delete(&row.blob_name);
     }
-    Ok(helpers::ok_json(json!({"ok": true, "id": row.id})))
+    // 回收分发出去的副本（对齐 Go 的 `revokeReplicas`）：不回收的话 worker 上会留一份
+    // 「源节点已经不认」的副本，客户端按目录路由过去还能下载到已删除的版本。
+    let ref_ = format!("{}@{}", row.ref_of(), row.version);
+    let revoked = crate::httpapi::cluster::revoke_replicas(&state, &ref_).await;
+    Ok(helpers::ok_json(
+        json!({"ok": true, "ref": ref_, "revoked": revoked, "id": row.id}),
+    ))
 }
 
 #[cfg(test)]
@@ -864,7 +936,8 @@ mod tests {
     fn hur_清单校验() {
         assert!(validate_hur_manifest(&json!({}), "").is_err());
         assert!(validate_hur_manifest(&json!({"hur": {"artifact": {"sha256": "a"}}}), "a").is_ok());
-        let e = validate_hur_manifest(&json!({"hur": {"artifact": {"sha256": "a"}}}), "b").unwrap_err();
+        let e =
+            validate_hur_manifest(&json!({"hur": {"artifact": {"sha256": "a"}}}), "b").unwrap_err();
         assert_eq!(e.0, "digest_mismatch");
     }
 

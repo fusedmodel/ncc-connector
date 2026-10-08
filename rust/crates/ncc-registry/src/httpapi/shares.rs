@@ -113,13 +113,14 @@ pub(crate) async fn ensure_admin(
     if key.is_empty() || secret.is_empty() {
         return None;
     }
-    let row: Option<AdminKeyRow> =
-        sqlx::query_as("SELECT id, label, `key`, secret_hash, revoked_at FROM admin_keys WHERE `key` = ?")
-            .bind(&key)
-            .fetch_optional(state.pool())
-            .await
-            .ok()
-            .flatten();
+    let row: Option<AdminKeyRow> = sqlx::query_as(
+        "SELECT id, label, `key`, secret_hash, revoked_at FROM admin_keys WHERE `key` = ?",
+    )
+    .bind(&key)
+    .fetch_optional(state.pool())
+    .await
+    .ok()
+    .flatten();
     let k = row?;
     if k.revoked_at.is_some() || store::hash_secret(&secret) != k.secret_hash {
         return None;
@@ -132,7 +133,11 @@ pub(crate) async fn ensure_admin(
     Some(AdminActor {
         kind: "admin_key",
         id: k.id,
-        name: if k.label.trim().is_empty() { k.key } else { k.label },
+        name: if k.label.trim().is_empty() {
+            k.key
+        } else {
+            k.label
+        },
     })
 }
 
@@ -152,7 +157,11 @@ pub(crate) async fn audit(
         // 没有管理员身份 = 不是治理动作（普通用户分享自己的制品不进审计）。
         return;
     };
-    let raw = if detail.is_null() { "{}".to_string() } else { detail.to_string() };
+    let raw = if detail.is_null() {
+        "{}".to_string()
+    } else {
+        detail.to_string()
+    };
     let res = sqlx::query(
         "INSERT INTO audit_logs (id, actor_kind, actor_id, actor_name, action, target, target_name, summary, detail, ip, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -313,7 +322,10 @@ async fn list_shares(
     let total = store::shares::count(state.pool(), &created_by)
         .await
         .unwrap_or(0);
-    let list: Vec<Value> = rows.iter().map(|r| share_row_json(state.cfg(), r)).collect();
+    let list: Vec<Value> = rows
+        .iter()
+        .map(|r| share_row_json(state.cfg(), r))
+        .collect();
     Ok(helpers::ok_json(json!({
         "shares": list, "total": total, "limit": limit, "offset": offset,
     })))
@@ -544,7 +556,12 @@ fn share_json(
 
 fn share_row_json(cfg: &Config, r: &store::shares::ShareRow) -> Value {
     let sh = r.as_share();
-    let mut out = share_json(cfg, &sh, None, &share_link(cfg, &format!("{}…", sh.token_hint)));
+    let mut out = share_json(
+        cfg,
+        &sh,
+        None,
+        &share_link(cfg, &format!("{}…", sh.token_hint)),
+    );
     out["artifact"] = json!({
         "id": r.artifact_id, "name": r.artifact_name, "slug": r.artifact_slug,
         "kind": r.artifact_kind, "sha256": r.artifact_sha, "size": r.artifact_size,
@@ -579,16 +596,36 @@ pub(crate) fn esc(s: &str) -> String {
 }
 
 /// 分享落地页（单文件、无依赖，和接入页同一路子）。
-fn share_page_html(name: &str, ref_: &str, note: &str, usable: bool, size: i64, max: i64, left: i64) -> String {
-    let title = esc(if name.is_empty() { "分享链接" } else { name });
-    let (state, state_cls) = if usable { ("可下载", "ok") } else { ("不可用", "bad") };
+fn share_page_html(
+    name: &str,
+    ref_: &str,
+    note: &str,
+    usable: bool,
+    size: i64,
+    max: i64,
+    left: i64,
+) -> String {
+    let title = esc(if name.is_empty() {
+        "分享链接"
+    } else {
+        name
+    });
+    let (state, state_cls) = if usable {
+        ("可下载", "ok")
+    } else {
+        ("不可用", "bad")
+    };
     let btn = if usable {
         r#"<a class="btn" href="raw">下载文件</a>
     <div class="cmd"><code>curl -OJ {{RAW}}</code></div>"#
     } else {
         ""
     };
-    let size_text = if size > 0 { format!("{size} B") } else { String::new() };
+    let size_text = if size > 0 {
+        format!("{size} B")
+    } else {
+        String::new()
+    };
     let uses_text = if max > 0 {
         format!("{left} / {max} 次剩余")
     } else {
@@ -656,7 +693,9 @@ mod tests {
 
     async fn state(name: &str) -> AppState {
         let pool = sqlx::Pool::connect("sqlite::memory:").await.unwrap();
-        ncc_core::pool::migrate(&pool, crate::schema::DDL).await.unwrap();
+        ncc_core::pool::migrate(&pool, crate::schema::DDL)
+            .await
+            .unwrap();
         let mut cfg = crate::config::load().expect("默认配置可加载");
         cfg.public_url = "http://localhost:8282".to_string();
         cfg.jwt_secret = "test-secret".to_string();
@@ -679,10 +718,19 @@ mod tests {
     }
 
     /// 建一个用户 + 一条私有制品 + 一把可用的 API-Key，返回 (用户 id, 制品, bearer)。
-    async fn seed(state: &AppState, uid: &str, slug: &str) -> (String, store::artifacts::ArtifactRow, String) {
-        let u = store::users::create(state.pool(), &format!("用户{uid}"), &format!("{uid}@x.com"), "h")
-            .await
-            .unwrap();
+    async fn seed(
+        state: &AppState,
+        uid: &str,
+        slug: &str,
+    ) -> (String, store::artifacts::ArtifactRow, String) {
+        let u = store::users::create(
+            state.pool(),
+            &format!("用户{uid}"),
+            &format!("{uid}@x.com"),
+            "h",
+        )
+        .await
+        .unwrap();
         let ns = store::namespaces::create_account(state.pool(), &u.id, &u.name, slug)
             .await
             .unwrap();
@@ -710,14 +758,18 @@ mod tests {
         .await
         .unwrap();
         state.blobs().put("b", b"hello").unwrap();
-        let (_k, secret) = store::apikeys::create(state.pool(), &u.id, "t", &[]).await.unwrap();
+        let (_k, secret) = store::apikeys::create(state.pool(), &u.id, "t", &[])
+            .await
+            .unwrap();
         (u.id, a, secret)
     }
 
     async fn call(app: &Router, req: Request<Body>) -> (StatusCode, Value) {
         let resp = app.clone().oneshot(req).await.unwrap();
         let status = resp.status();
-        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .unwrap();
         let v = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         (status, v)
     }
@@ -751,13 +803,23 @@ mod tests {
         // 公开页：HTML 404（说明路由命中本族处理器，而不是未迁移兜底的 501）
         let resp = app
             .clone()
-            .oneshot(Request::builder().uri("/s/nope").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/s/nope")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
         let resp = app
             .clone()
-            .oneshot(Request::builder().uri("/a/nope").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/a/nope")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -779,11 +841,7 @@ mod tests {
         let app = app(&st);
 
         // 未登录 → 401
-        let (code, v) = call(
-            &app,
-            json_req("POST", "/shares", "", json!({"ref": a.id})),
-        )
-        .await;
+        let (code, v) = call(&app, json_req("POST", "/shares", "", json!({"ref": a.id}))).await;
         assert_eq!(code, StatusCode::UNAUTHORIZED);
         assert_eq!(v["error"]["code"], "unauthorized");
 
@@ -876,31 +934,47 @@ mod tests {
         .await;
         assert_eq!(code, StatusCode::FORBIDDEN);
         assert_eq!(v["error"]["code"], "forbidden");
-        assert_eq!(v["error"]["message"], "你没有这条制品的读取权限，不能分享它");
+        assert_eq!(
+            v["error"]["message"],
+            "你没有这条制品的读取权限，不能分享它"
+        );
 
         // 不存在的制品 → 404
-        let (code, v) = call(&app, json_req("POST", "/shares", &s1, json!({"ref": "A-nope"}))).await;
+        let (code, v) = call(
+            &app,
+            json_req("POST", "/shares", &s1, json!({"ref": "A-nope"})),
+        )
+        .await;
         assert_eq!(code, StatusCode::NOT_FOUND);
         assert_eq!(v["error"]["message"], "制品不存在");
         // 缺 ref → 400
         let (code, v) = call(&app, json_req("POST", "/shares", &s1, json!({}))).await;
         assert_eq!(code, StatusCode::BAD_REQUEST);
-        assert_eq!(v["error"]["message"], "缺少 ref（@命名空间/slug 或 A-… id）");
+        assert_eq!(
+            v["error"]["message"],
+            "缺少 ref（@命名空间/slug 或 A-… id）"
+        );
     }
 
     #[tokio::test]
     async fn 公开页与raw_取字节才计数_用尽即410() {
         let st = state("raw").await;
         let (uid, a, _s) = seed(&st, "U-1", "zhangsan").await;
-        let (sh, token) = store::shares::create(st.pool(), &a.id, &a.namespace_id, &uid, "", 1, None)
-            .await
-            .unwrap();
+        let (sh, token) =
+            store::shares::create(st.pool(), &a.id, &a.namespace_id, &uid, "", 1, None)
+                .await
+                .unwrap();
         let app = app(&st);
 
         // 落地页：200 HTML，不计数
         let resp = app
             .clone()
-            .oneshot(Request::builder().uri(format!("/s/{token}")).body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/s/{token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -912,7 +986,10 @@ mod tests {
             .unwrap()
             .starts_with("text/html"));
         let html = String::from_utf8(
-            axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap().to_vec(),
+            axum::body::to_bytes(resp.into_body(), 1 << 20)
+                .await
+                .unwrap()
+                .to_vec(),
         )
         .unwrap();
         assert!(html.contains("演示包"), "{html}");
@@ -941,7 +1018,12 @@ mod tests {
         // raw：拿到字节 + 计数
         let resp = app
             .clone()
-            .oneshot(Request::builder().uri(format!("/s/{token}/raw")).body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/s/{token}/raw"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -951,7 +1033,9 @@ mod tests {
             .headers()
             .get("x-ncc-share-remaining")
             .map(|v| v.to_str().unwrap().to_string());
-        let body = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .unwrap();
         assert_eq!(&body[..], b"hello");
         // 限 1 次的名片：这一次用完之后剩余 0（Go 也会给这个头）
         assert_eq!(resp_remaining.as_deref(), Some("0"));
@@ -973,12 +1057,16 @@ mod tests {
         .await;
         assert_eq!(code, StatusCode::GONE);
         assert_eq!(v["error"]["code"], "share_expired");
-        assert_eq!(v["error"]["message"], "链接已失效（已撤销、已过期或次数用尽）");
+        assert_eq!(
+            v["error"]["message"],
+            "链接已失效（已撤销、已过期或次数用尽）"
+        );
 
         // ?meta=1 不计数、不下发字节
-        let (_sh2, token2) = store::shares::create(st.pool(), &a.id, &a.namespace_id, &uid, "", 1, None)
-            .await
-            .unwrap();
+        let (_sh2, token2) =
+            store::shares::create(st.pool(), &a.id, &a.namespace_id, &uid, "", 1, None)
+                .await
+                .unwrap();
         let (code, v) = call(
             &app,
             Request::builder()
@@ -993,7 +1081,11 @@ mod tests {
         assert_eq!(v["usable"], true);
         let used: i64 = sqlx::query_scalar("SELECT used_count FROM artifact_shares WHERE id = ?")
             .bind(
-                &store::shares::by_token(st.pool(), &token2).await.unwrap().unwrap().id,
+                &store::shares::by_token(st.pool(), &token2)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .id,
             )
             .fetch_one(st.pool())
             .await
@@ -1012,12 +1104,20 @@ mod tests {
         assert_eq!(code, StatusCode::NOT_FOUND);
         let resp = app
             .clone()
-            .oneshot(Request::builder().uri("/s/unknown").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/s/unknown")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
         let html = String::from_utf8(
-            axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap().to_vec(),
+            axum::body::to_bytes(resp.into_body(), 1 << 20)
+                .await
+                .unwrap()
+                .to_vec(),
         )
         .unwrap();
         assert!(html.contains("链接不存在"));
@@ -1027,9 +1127,10 @@ mod tests {
     async fn 撤销_越权与管理员路径() {
         let st = state("revoke").await;
         let (uid, a, secret) = seed(&st, "U-1", "zhangsan").await;
-        let (sh, _t) = store::shares::create(st.pool(), &a.id, &a.namespace_id, &uid, "label-x", 0, None)
-            .await
-            .unwrap();
+        let (sh, _t) =
+            store::shares::create(st.pool(), &a.id, &a.namespace_id, &uid, "label-x", 0, None)
+                .await
+                .unwrap();
         let app = app(&st);
 
         // 未登录 → 401
@@ -1057,8 +1158,12 @@ mod tests {
         assert_eq!(code, StatusCode::NOT_FOUND);
         assert_eq!(v["error"]["message"], "分享不存在");
         // 别人撤不动 → 403
-        let other = store::users::create(st.pool(), "王五", "ww@x.com", "h").await.unwrap();
-        let (_k, other_secret) = store::apikeys::create(st.pool(), &other.id, "t", &[]).await.unwrap();
+        let other = store::users::create(st.pool(), "王五", "ww@x.com", "h")
+            .await
+            .unwrap();
+        let (_k, other_secret) = store::apikeys::create(st.pool(), &other.id, "t", &[])
+            .await
+            .unwrap();
         let (code, v) = call(
             &app,
             Request::builder()
@@ -1088,7 +1193,14 @@ mod tests {
             &app,
             Request::builder()
                 .method("GET")
-                .uri(format!("/shares/info/{}", store::shares::by_id(st.pool(), &sh.id).await.unwrap().unwrap().token_hint))
+                .uri(format!(
+                    "/shares/info/{}",
+                    store::shares::by_id(st.pool(), &sh.id)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .token_hint
+                ))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1110,11 +1222,17 @@ mod tests {
         // 未登录 → 401
         let (code, v) = call(
             &app,
-            Request::builder().uri("/shares").body(Body::empty()).unwrap(),
+            Request::builder()
+                .uri("/shares")
+                .body(Body::empty())
+                .unwrap(),
         )
         .await;
         assert_eq!(code, StatusCode::UNAUTHORIZED);
-        assert_eq!(v["error"]["message"], "未认证或凭据无效（先 ncc login 或带 API-KEY）");
+        assert_eq!(
+            v["error"]["message"],
+            "未认证或凭据无效（先 ncc login 或带 API-KEY）"
+        );
 
         let (code, v) = call(
             &app,

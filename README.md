@@ -7,26 +7,28 @@ A **single-binary** registry service that puts **artifact hosting**, **configura
 into one process — and scales out as **multiple nodes** (one `master` plus any number of `worker`s).
 
 It is part of the open, self-hostable [`ncc`](https://github.com/fusedmodel/ncc) project:
-one Go binary, one SQLite file, a built-in web console, no external database and no object storage
+one Rust binary, one SQLite file, a built-in web console, no external database and no object storage
 required to get started. Change history lives in [`CHANGELOG.md`](CHANGELOG.md).
 
 ```bash
-go build -o dist/ncc-registry ./cmd/ncc-registry
-NCCR_PORT=8282 ./dist/ncc-registry          # → http://localhost:8282
+cd rust && cargo build --release
+NCCR_PORT=8282 ./target/release/ncc-registry          # → http://localhost:8282
+# or install the binary globally: cargo install --path rust/crates/ncc-registry
 ```
 
-> **Rust rewrite (in progress):** [`rust/`](rust/) re-implements this node with
-> axum + tokio + sqlx (binary is still `ncc-registry`, so the two can be swapped in place).
-> It opens the **existing** `ncc-registry.db` directly (missing columns are added on start)
-> and interoperates with this Go build in both directions — same tokens, same password hashes,
-> same API shapes, same `enc:v1:` secret box. Migrated endpoints and what is still pending:
-> [`rust/README.md`](rust/README.md).
+> **Rust implementation:** [`rust/`](rust/) **is** this node's implementation (axum + tokio + sqlx;
+> the binary is `ncc-registry`). It opens an **existing** `ncc-registry.db` directly (missing columns
+> are added on start) — same tokens, same password hashes, same API shapes, same `enc:v1:` secret box,
+> so a deployment built from the older sources can swap the binary in place and keep its data.
+> Migration status and the known trade-offs: [`rust/README.md`](rust/README.md).
 
-It is also an **importable Go library** (`module github.com/fusedmodel/ncc-registry`) — to embed a
-registry node in your own process, see [Using it as a Go library](#using-it-as-a-go-library).
+It is also a **Rust workspace** — `ncc-core` (a reusable foundation) plus `ncc-registry` (the service)
+— so parts of it can be embedded in your own process: see [Using it as a library](#using-it-as-a-library).
 
-**Requirements**: Go 1.24+ to build from source (or use the published Docker image / the prebuilt
-binaries from Releases). No external database, no object storage and no other NCC component is needed.
+**Requirements**: Rust 1.85+ (installable with rustup) plus a C compiler (`cc` / `clang`) — sqlx's
+SQLite driver compiles the bundled sqlite3 sources, so a C toolchain has to be present. Or use the
+published Docker image / the prebuilt binaries from Releases (`ncc-registry-<os>-<arch>` +
+`checksums.txt`). No external database, no object storage and no other NCC component is needed.
 
 **When it is useful**: you have agents, skills, packages and services scattered across machines on a
 private network, and you want one address that answers "what exists here, who provides it, who is
@@ -156,8 +158,8 @@ whichever node holds them. To make some or all workers hold a copy as well, the 
 
 ```bash
 cd ncc-registry
-go build -o dist/ncc-registry ./cmd/ncc-registry
-NCCR_DATA_DIR=./data ./dist/ncc-registry          # master, :8282 by default
+cargo build --release --manifest-path rust/Cargo.toml
+NCCR_DATA_DIR=./data rust/target/release/ncc-registry   # master, :8282 by default
 # console at http://localhost:8282 (includes the "node administration" section)
 ```
 
@@ -166,12 +168,12 @@ NCCR_DATA_DIR=./data ./dist/ncc-registry          # master, :8282 by default
 ```bash
 # terminal 1: master
 NCCR_PORT=8282 NCCR_DATA_DIR=./data/master NCCR_NODE_NAME=office-master \
-  NCCR_NODE_REGION=shanghai-intranet ./dist/ncc-registry
+  NCCR_NODE_REGION=shanghai-intranet rust/target/release/ncc-registry
 
 # terminal 2: worker (on another machine, use that machine's private IP)
 NCCR_ROLE=worker NCCR_PORT=8283 NCCR_DATA_DIR=./data/worker-a \
   NCCR_NODE_NAME=office-worker-a NCCR_NODE_REGION=shanghai-intranet \
-  NCCR_MASTER_URL=http://127.0.0.1:8282 NCCR_HEARTBEAT=15s ./dist/ncc-registry
+  NCCR_MASTER_URL=http://127.0.0.1:8282 NCCR_HEARTBEAT=15s rust/target/release/ncc-registry
 ```
 
 A worker `join`s on startup and then heartbeats every `NCCR_HEARTBEAT`, reporting its local directory
@@ -537,6 +539,7 @@ private deployments: bytes on NAS or a dedicated disk, the database on local SSD
 | `NCCR_NODE_TTL` | `60s` | Online window for hosted nodes / workers (the master sweeps workers at `4×`) |
 | `NCCR_INVITE_CODE` | empty | Empty = open registration inside the network; if set, registration must carry an invite code (comma-separated for several) |
 | `NCCR_CONSOLE` | `true` | Whether to serve the built-in web console |
+| `NCCR_CONSOLE_DIR` | `./web` | Directory the console is served from (**no embedding**; the repository ships it at `rust/web`). A missing directory just leaves the route unmounted — the API is unaffected |
 | `NCCR_P2P_SERVE` | `false` | Start a **hole-punchable entry point** with the service (one UDP socket that answers STUN Binding only; off by default) |
 | `NCCR_P2P_STUN` | several built in | STUN list (comma-separated) — use one you can reach; NAT profiling and punching rely on it |
 | `NCCR_P2P_TURN` | empty | Self-hosted TURN list. **Hard rule**: TURN must be hosted by the operator — the hosted layer stays out of the data path |
@@ -669,9 +672,10 @@ semantics (400 bad input / 401 unauthenticated / 403 not permitted / 404 missing
 
 ## Web console
 
-`GET /` is the built-in single-file console (`httpapi/web/index.html`, embedded in the binary, no build
-step): this node's identity and size, the worker list (online state / artifact counts / last heartbeat),
-the aggregated directory (searchable), hosted-node discovery (including region coverage),
+`GET /` is the built-in single-file console (`rust/web/index.html`, served from a directory at runtime
+— `NCCR_CONSOLE_DIR`, default `./web` — no build step): this node's identity and size, the worker list
+(online state / artifact counts / last heartbeat), the aggregated directory (searchable),
+hosted-node discovery (including region coverage),
 **node administration** (enter the admin key/secret to disable accounts, reset passwords, remove nodes,
 archive service entries, revoke shares and rotate credentials from the browser), and a quick reference
 for the CLI and HTTP entry points.
@@ -783,11 +787,17 @@ cd deploy
 docker compose up -d --build            # master :8282, worker :8283
 ```
 
-In `deploy/docker-compose.yml` both services share one image and differ only by `NCCR_ROLE`; data goes
-into separate named volumes. In production, deploy workers to the machines on your network and point
-`NCCR_MASTER_URL` at the master.
+The image is built with the **repository root** as the build context (`deploy/Dockerfile` is a
+multi-stage build: `rust:1-bookworm` compiles, `debian:bookworm-slim` runs) and is published under the
+same name as before, `ghcr.io/fusedmodel/ncc-registry`. In `deploy/docker-compose.yml` both services
+share one image and differ only by `NCCR_ROLE`; data goes into separate named volumes. In production,
+deploy workers to the machines on your network and point `NCCR_MASTER_URL` at the master.
 
 ### Bare binary / systemd
+
+Install the binary with `cargo install --path rust/crates/ncc-registry` (or `cargo build --release`
+and copy `rust/target/release/ncc-registry` to `/usr/local/bin/`) — it is one self-contained binary,
+so nothing else has to be on the host:
 
 ```bash
 NCCR_DATA_DIR=/var/lib/ncc-registry \
@@ -800,71 +810,22 @@ NCCR_CLUSTER_TOKEN=<random-string> \
 One process and one directory: backing up means archiving `NCCR_DATA_DIR`
 (database + `blobs/` + `node-id` + `jwt-secret`).
 
-## Using it as a Go library
+## Using it as a library
 
-```bash
-go get github.com/fusedmodel/ncc-registry
-```
+There is **no promised stable library API** — unlike the earlier Go version, the code is laid out for
+the service binary first. What the implementation does give you is a workspace split in two, both
+under `rust/crates/`:
 
-Exported packages (`p2p` and `secretbox` are internal implementations, not public API):
-
-| Package | Purpose |
+| Crate | Purpose |
 |---|---|
-| `config` | `Load()` reads the `NCCR_*` environment variables (directories / identity / keys are persisted to disk); you can also fill in the `Config` struct yourself |
-| `model` | Every resource model (users / artifacts / nodes / configs / shares / grants …) |
-| `store` | `Open(path)` opens SQLite and migrates automatically; all read/write methods hang off `*Store` |
-| `storage` | The `Storage` interface plus a `NewLocal` disk driver (implement the same interface for S3/Ceph) |
-| `httpapi` | `NewServer` / `NewRouter` — assembles the above into an HTTP service |
+| `ncc-core` | The reusable foundation the two services share: `NCCR_*` config, ids, errors, scopes, crypto (HS256 JWT / bcrypt / the `enc:v1:` secret box), blob storage, and opening + migrating the SQLite database |
+| `ncc-registry` | The node itself — `router` / `httpapi` / `store`: the HTTP surface, the handlers and the SQLite reads and writes; the binary is `ncc-registry` |
 
-Minimal embedding (you own the configuration and the lifecycle):
-
-```go
-package main
-
-import (
-	"log"
-	"net/http"
-
-	"github.com/fusedmodel/ncc-registry/config"
-	"github.com/fusedmodel/ncc-registry/httpapi"
-	"github.com/fusedmodel/ncc-registry/storage"
-	"github.com/fusedmodel/ncc-registry/store"
-)
-
-func main() {
-	// 1. Use config.Load() to keep the environment-variable behaviour,
-	//    or build the struct yourself.
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	st, err := store.Open(cfg.DBPath) // includes AutoMigrate; no separate table setup
-	if err != nil {
-		log.Fatal(err)
-	}
-	blob, err := storage.NewLocal(cfg.BlobDir, cfg.PublicURL)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// 2. NewServer returns a handle plus the routes. The handle is how you shut down
-	//    background work (cluster heartbeat / expired-worker sweep / hole-punchable
-	//    entry point) on exit — don't drop it.
-	srv, handler := httpapi.NewServer(cfg, st, blob)
-	defer srv.Close() // safe to call repeatedly; it does not close the database — whoever opened it closes it
-
-	log.Fatal(http.ListenAndServe(cfg.Addr, handler))
-}
-```
-
-To mount it inside your own router tree, or to use only part of it (say just `store` for reads and
-writes without the built-in HTTP surface), take the packages you need from the table above — there is
-no hidden global state between them.
-
-> Note: `NewRouter` is a thin wrapper over `NewServer` that returns the routes but no handle. That is
-> fine when the process is exiting; but if you **create it repeatedly** (tests, multiple instances),
-> use `NewServer` + `Close`, or the background loops will leak.
+To embed a registry node in your own process, depend on `ncc-core` and reuse
+`rust/crates/ncc-registry/src/{router,httpapi,store}` directly. Those are ordinary Rust modules today:
+no `lib` target, no semver promise, no deprecation policy. Splitting `ncc-registry` into a `lib` plus a
+thin `bin` is welcome whenever someone actually needs it — the pieces above are already separated with
+that in mind, and `ncc-core` is a library already.
 
 ## Smoke test
 
@@ -914,7 +875,7 @@ simply share the same HTTP contract.
 - **Byte-layer improvements**: local disk → S3-compatible object storage (Ceph RGW / MinIO); worker-side
   cache policy and invalidation.
 - **Cross-network interconnection**: today this is plain HTTP inside one network; crossing networks needs
-  punching or relaying. The design is settled — `pion/webrtc` with a signalling control plane and
+  punching or relaying. The design is settled — `webrtc-rs` with a signalling control plane and
   operator-hosted TURN — and is measured (direct connection ~90 ms / ~50 MB/s, relay-only ~2 s; design
   notes live in the `ncc` repository). **This node already ships the P2P decision surface**:
   `/api/p2p/self|check|serve` (CLI: `ncc registry p2p self|check|serve`; `NCCR_P2P_SERVE=1` starts an

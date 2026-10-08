@@ -19,8 +19,7 @@ pub struct ApiKey {
     pub last_used_at: Option<String>,
 }
 
-const COLS: &str =
-    "id, user_id, label, prefix, secret_hash, scopes, created_at, last_used_at";
+const COLS: &str = "id, user_id, label, prefix, secret_hash, scopes, created_at, last_used_at";
 
 /// 新建 Key，返回（记录，明文）。明文只在这一刻存在。
 pub async fn create(
@@ -61,7 +60,10 @@ pub async fn create(
 ///
 /// 比对的是**整串**而不是随机段：这样即使 prefix 撞了也不会误认。
 /// （与 Go 的 `strings.Split(secret, "_")` + `parts[1]` 行为一致。）
-pub async fn find_by_secret(pool: &SqlitePool, secret: &str) -> Result<Option<ApiKey>, sqlx::Error> {
+pub async fn find_by_secret(
+    pool: &SqlitePool,
+    secret: &str,
+) -> Result<Option<ApiKey>, sqlx::Error> {
     let parts: Vec<&str> = secret.split('_').collect();
     if parts.len() < 3 {
         return Ok(None);
@@ -82,7 +84,10 @@ pub async fn find_by_secret(pool: &SqlitePool, secret: &str) -> Result<Option<Ap
 
 pub async fn list(pool: &SqlitePool, user_id: &str) -> Result<Vec<ApiKey>, sqlx::Error> {
     let sql = format!("SELECT {COLS} FROM api_keys WHERE user_id = ? ORDER BY created_at DESC");
-    sqlx::query_as::<_, ApiKey>(&sql).bind(user_id).fetch_all(pool).await
+    sqlx::query_as::<_, ApiKey>(&sql)
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
 }
 
 pub async fn delete(pool: &SqlitePool, id: &str, user_id: &str) -> Result<(), sqlx::Error> {
@@ -115,8 +120,12 @@ mod tests {
     #[tokio::test]
     async fn 明文可反查_且只存哈希() {
         let p = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        ncc_core::pool::migrate(&p, crate::schema::DDL).await.unwrap();
-        let (k, secret) = create(&p, "U-1", "ci", &["registry:read".to_string()]).await.unwrap();
+        ncc_core::pool::migrate(&p, crate::schema::DDL)
+            .await
+            .unwrap();
+        let (k, secret) = create(&p, "U-1", "ci", &["registry:read".to_string()])
+            .await
+            .unwrap();
         assert!(secret.starts_with("ncc_"));
         assert_ne!(k.secret_hash, secret);
         let found = find_by_secret(&p, &secret).await.unwrap().unwrap();

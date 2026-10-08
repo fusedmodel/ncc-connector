@@ -1,13 +1,18 @@
-# 镜像构建上下文里不需要的东西。
+# 镜像构建上下文（= 仓库根）里不需要的东西。
 #
-# deploy/Dockerfile 会 `COPY . .` 后再编译，所以这份名单直接决定镜像里多出什么。
+# deploy/Dockerfile 只对 rust/ 与 rust/web 做 COPY，构建输入是
+# Cargo.toml / Cargo.lock / crates/ / web/，这份名单只挡「与构建无关」的部分 ——
 # 尤其是 .git 与运行期数据：前者是几十 MB 的噪音，后者是**节点身份与密钥**
 # （data/ 下有 node-id 与 jwt-secret），进镜像层就擦不掉了。
 .git
 .gitignore
 .github
 
-# 构建产物
+# 宿主机的编译产物：几百 MB，而且必须让容器内重新编
+# （宿主机的平台与工具链和镜像里未必一致，拷进去只会得到一个跑不起来的二进制）
+rust/target/
+
+# 本地构建/调试脚本产物
 dist/
 
 # 运行数据：库 + blobs + 节点身份 + 密钥
@@ -16,12 +21,7 @@ data/
 *.db-wal
 *.db-shm
 
-# 文档与本地环境
-README.md
-CHANGELOG.md
-LICENSE
-deploy/
-scripts/
+# 本地环境与杂项
 .env
 *.log
 .DS_Store

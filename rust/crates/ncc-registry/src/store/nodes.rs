@@ -223,7 +223,11 @@ pub async fn upsert(
     } else {
         NODE_SERVICE.to_string()
     };
-    let visibility = if in_req.visibility == "private" { "private" } else { "public" };
+    let visibility = if in_req.visibility == "private" {
+        "private"
+    } else {
+        "public"
+    };
     let slug = {
         let s = slugify(&in_req.slug);
         if s == "x" || in_req.slug.trim().is_empty() {
@@ -302,7 +306,11 @@ pub async fn upsert(
     Ok((row, created))
 }
 
-pub async fn by_id(pool: &SqlitePool, owner_id: &str, id: &str) -> Result<Option<NodeRow>, sqlx::Error> {
+pub async fn by_id(
+    pool: &SqlitePool,
+    owner_id: &str,
+    id: &str,
+) -> Result<Option<NodeRow>, sqlx::Error> {
     let sql = format!("{} WHERE hosted_nodes.id = ?", base_query());
     bind_owner(sqlx::query_as::<_, NodeRow>(&sql), owner_id)
         .bind(id)
@@ -320,7 +328,10 @@ pub async fn delete(pool: &SqlitePool, id: &str, ns_id: &str) -> Result<(), sqlx
 }
 
 /// 我命名空间下的全部节点 id（判定「这个节点是不是我的」用）。
-pub async fn ids_of_namespaces(pool: &SqlitePool, ns_ids: &[String]) -> Result<Vec<String>, sqlx::Error> {
+pub async fn ids_of_namespaces(
+    pool: &SqlitePool,
+    ns_ids: &[String],
+) -> Result<Vec<String>, sqlx::Error> {
     if ns_ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -428,7 +439,12 @@ pub async fn patch_link(
     for b in &binds {
         q = q.bind(b);
     }
-    let res = q.bind(now_go()).bind(id).bind(owner_id).execute(pool).await?;
+    let res = q
+        .bind(now_go())
+        .bind(id)
+        .bind(owner_id)
+        .execute(pool)
+        .await?;
     Ok(res.rows_affected() > 0)
 }
 
@@ -466,7 +482,9 @@ pub async fn list_of_user(
 }
 
 /// 按 kind 统计在线/离线节点数（`/api/meta` 与 kinds 端点用）。
-pub async fn kind_counts(pool: &SqlitePool) -> Result<std::collections::HashMap<String, i64>, sqlx::Error> {
+pub async fn kind_counts(
+    pool: &SqlitePool,
+) -> Result<std::collections::HashMap<String, i64>, sqlx::Error> {
     let rows: Vec<(String, i64)> =
         sqlx::query_as("SELECT kind, COUNT(*) FROM hosted_nodes GROUP BY kind")
             .fetch_all(pool)
@@ -485,7 +503,12 @@ pub async fn regions(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
 
 /// 是否有这个节点（心跳里判断归属用）。
 pub async fn exists_node(pool: &SqlitePool, id: &str) -> Result<bool, sqlx::Error> {
-    exists(pool, "SELECT COUNT(*) FROM hosted_nodes WHERE id = ?", &[id]).await
+    exists(
+        pool,
+        "SELECT COUNT(*) FROM hosted_nodes WHERE id = ?",
+        &[id],
+    )
+    .await
 }
 
 /// 配置里的节点 TTL（判定在线）。
@@ -499,14 +522,18 @@ mod tests {
 
     async fn pool() -> SqlitePool {
         let p = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        ncc_core::pool::migrate(&p, crate::schema::DDL).await.unwrap();
+        ncc_core::pool::migrate(&p, crate::schema::DDL)
+            .await
+            .unwrap();
         p
     }
 
     #[tokio::test]
     async fn 注册与心跳合并() {
         let p = pool().await;
-        let ns = crate::store::namespaces::create_account(&p, "U-1", "张三", "zs").await.unwrap();
+        let ns = crate::store::namespaces::create_account(&p, "U-1", "张三", "zs")
+            .await
+            .unwrap();
         let req = HeartbeatReq {
             name: "张三的 Mac".to_string(),
             slug: "my-mac".to_string(),
@@ -528,12 +555,20 @@ mod tests {
     #[tokio::test]
     async fn 连接与解绑() {
         let p = pool().await;
-        let ns1 = crate::store::namespaces::create_account(&p, "U-1", "甲", "jia").await.unwrap();
-        let ns2 = crate::store::namespaces::create_account(&p, "U-2", "乙", "yi").await.unwrap();
+        let ns1 = crate::store::namespaces::create_account(&p, "U-1", "甲", "jia")
+            .await
+            .unwrap();
+        let ns2 = crate::store::namespaces::create_account(&p, "U-2", "乙", "yi")
+            .await
+            .unwrap();
         let (node, _) = upsert(
             &p,
             &ns2.id,
-            &HeartbeatReq { name: "乙的机器".to_string(), slug: "yi-node".to_string(), ..Default::default() },
+            &HeartbeatReq {
+                name: "乙的机器".to_string(),
+                slug: "yi-node".to_string(),
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -541,12 +576,18 @@ mod tests {
         let l1 = link(&p, "U-1", &node.id, "U-2", "同事", "").await.unwrap();
         assert_eq!(l1.label, "同事");
         // 重复连接是更新而不是新增
-        let again = link(&p, "U-1", &node.id, "U-2", "老同事", "").await.unwrap();
+        let again = link(&p, "U-1", &node.id, "U-2", "老同事", "")
+            .await
+            .unwrap();
         assert_eq!(again.id, l1.id);
         assert_eq!(again.label, "老同事");
         assert_eq!(list_linked(&p, "U-1").await.unwrap().len(), 1);
-        assert!(patch_link(&p, &l1.id, "U-1", Some("好友"), None).await.unwrap());
-        assert!(!patch_link(&p, &l1.id, "U-9", Some("越权"), None).await.unwrap());
+        assert!(patch_link(&p, &l1.id, "U-1", Some("好友"), None)
+            .await
+            .unwrap());
+        assert!(!patch_link(&p, &l1.id, "U-9", Some("越权"), None)
+            .await
+            .unwrap());
         delete_link(&p, &l1.id, "U-1").await.unwrap();
         assert!(list_linked(&p, "U-1").await.unwrap().is_empty());
         let _ = ns1;

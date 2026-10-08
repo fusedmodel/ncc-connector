@@ -138,7 +138,8 @@ impl ShareRow {
 
 /// 显式列出 `artifact_shares.*`：join 之后 `id` / `created_at` 在几张表里都有，
 /// 不写清楚会互相覆盖（这正是 Go 侧注释里踩过的坑）。
-const SHARE_COLS: &str = "artifact_shares.id, artifact_shares.artifact_id, artifact_shares.namespace_id, \
+const SHARE_COLS: &str =
+    "artifact_shares.id, artifact_shares.artifact_id, artifact_shares.namespace_id, \
      artifact_shares.token_hash, artifact_shares.token_hint, artifact_shares.label, \
      artifact_shares.created_by, artifact_shares.max_uses, artifact_shares.used_count, \
      artifact_shares.expires_at, artifact_shares.revoked_at, artifact_shares.last_used_at, \
@@ -221,7 +222,11 @@ pub async fn list(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<ShareRow>, sqlx::Error> {
-    let limit = if limit <= 0 || limit > MAX_LIMIT { DEFAULT_LIMIT } else { limit };
+    let limit = if limit <= 0 || limit > MAX_LIMIT {
+        DEFAULT_LIMIT
+    } else {
+        limit
+    };
     let mut sql = row_query(created_by);
     sql.push_str(" ORDER BY artifact_shares.created_at DESC LIMIT ? OFFSET ?");
     let mut q = sqlx::query_as::<_, ShareRow>(&sql);
@@ -311,7 +316,9 @@ mod tests {
 
     async fn pool() -> SqlitePool {
         let p = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        ncc_core::pool::migrate(&p, crate::schema::DDL).await.unwrap();
+        ncc_core::pool::migrate(&p, crate::schema::DDL)
+            .await
+            .unwrap();
         p
     }
 

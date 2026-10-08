@@ -167,7 +167,10 @@ pub fn load() -> Result<Config, String> {
         return Err(format!("NCCR_ROLE 必须是 master 或 worker，收到 {role:?}"));
     }
     let port = env::env_int("NCCR_PORT", 8282) as u16;
-    let data_dir = resolve_dir(std::path::Path::new(""), &env::env_or("NCCR_DATA_DIR", "./data"))?;
+    let data_dir = resolve_dir(
+        std::path::Path::new(""),
+        &env::env_or("NCCR_DATA_DIR", "./data"),
+    )?;
     let blob_dir = resolve_dir(&data_dir, &env::env_or("NCCR_BLOB_DIR", "blobs"))?;
     let db_path = resolve_abs(&data_dir, &env::env_or("NCCR_DB_PATH", "ncc-registry.db"))?;
     if let Some(parent) = db_path.parent() {
@@ -205,12 +208,9 @@ pub fn load() -> Result<Config, String> {
         }
     }
 
-    let public_url = env::env_or(
-        "NCCR_PUBLIC_URL",
-        &format!("http://localhost:{port}"),
-    )
-    .trim_end_matches('/')
-    .to_string();
+    let public_url = env::env_or("NCCR_PUBLIC_URL", &format!("http://localhost:{port}"))
+        .trim_end_matches('/')
+        .to_string();
 
     let node_id = persistent_secret(
         &env::env_or("NCCR_NODE_ID", ""),
@@ -231,7 +231,8 @@ pub fn load() -> Result<Config, String> {
         .to_string();
     if role == ROLE_WORKER && master_url.is_empty() {
         return Err(
-            "worker 节点必须配置 NCCR_MASTER_URL（master 地址，如 http://10.0.0.1:8282）".to_string(),
+            "worker 节点必须配置 NCCR_MASTER_URL（master 地址，如 http://10.0.0.1:8282）"
+                .to_string(),
         );
     }
 

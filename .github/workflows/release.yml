@@ -1,8 +1,9 @@
 name: Release
 
-# 打 v* tag 才发。Go 库的「发布」就是这个 tag —— 有了它
-# `go get github.com/fusedmodel/ncc-registry@v1.2.3` 才能解析；
-# 二进制与镜像只是同一个 tag 的附带产物。
+# 打 v* tag 才发：每个平台一个二进制（外加校验和）+ 一个容器镜像。
+#
+# 产物命名**与 Go 版逐字一致**（`ncc-registry-<os>-<arch>` / `checksums.txt`），
+# 因为 install.sh 与用户脚本都是按这个名字下载的；改名等于把所有人都挡在门外。
 on:
   push:
     tags: ['v*']
@@ -17,46 +18,72 @@ env:
 jobs:
   # ---------------------------------------------------------------- 二进制
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: linux
-            arch: amd64
-          - os: linux
-            arch: arm64
-          - os: darwin
-            arch: amd64
-          - os: darwin
-            arch: arm64
-          - os: windows
-            arch: amd64
-          - os: windows
-            arch: arm64
+          # 每个平台优先用**原生 runner**：交叉编译要把整套 C 工具链
+          # （sqlite3 是 C 源码，bundled 编译）搬过去，费力且易错。
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: ncc-registry-linux-amd64
+          # 唯一一处交叉编译：linux/arm64 用 cross（跑在容器里，自带目标工具链）
+          - runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact: ncc-registry-linux-arm64
+            cross: true
+          - runner: macos-13           # Intel
+            target: x86_64-apple-darwin
+            artifact: ncc-registry-darwin-amd64
+          - runner: macos-14           # Apple Silicon
+            target: aarch64-apple-darwin
+            artifact: ncc-registry-darwin-arm64
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: ncc-registry-windows-amd64.exe
+          # 若该 runner 标签在你的组织下不可用（arm64 Windows 是预览），
+          # 删掉这一项即可 —— 其余五个平台不受影响。
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            artifact: ncc-registry-windows-arm64.exe
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          go-version-file: go.mod
-          cache: true
+          targets: ${{ matrix.target }}
 
-      - name: 交叉编译（CGO 关掉：SQLite 驱动是纯 Go，产物可直接跑在 alpine / scratch）
-        env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
-          CGO_ENABLED: '0'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: ${{ matrix.target }}
+
+      - name: 安装 cross（仅 linux/arm64）
+        if: matrix.cross
+        run: cargo install cross --locked
+
+      - name: 编译
+        working-directory: rust
+        shell: bash
         run: |
-          ext=""
-          [[ "${GOOS}" == "windows" ]] && ext=".exe"
-          out="ncc-registry-${GOOS}-${GOARCH}${ext}"
-          go build -trimpath -ldflags="-s -w" -o "dist/${out}" ./cmd/ncc-registry
-          ls -la "dist/${out}"
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            cross build --release --locked --target "${{ matrix.target }}"
+          else
+            cargo build --release --locked --target "${{ matrix.target }}"
+          fi
+
+      - name: 收集产物
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "rust/target/${{ matrix.target }}/release/ncc-registry${{ endsWith(matrix.artifact, '.exe') && '.exe' || '' }}" \
+             "dist/${{ matrix.artifact }}"
+          ls -la "dist/${{ matrix.artifact }}"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ncc-registry-${{ matrix.os }}-${{ matrix.arch }}
+          name: ${{ matrix.artifact }}
           path: dist/*
           if-no-files-found: error
 
@@ -124,6 +151,8 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
+          # 上下文必须是仓库根：deploy/Dockerfile 要 COPY rust/ 与 rust/web，
+          # 而 Docker 的 COPY 只能读上下文里的东西。
           context: .
           file: deploy/Dockerfile
           push: true

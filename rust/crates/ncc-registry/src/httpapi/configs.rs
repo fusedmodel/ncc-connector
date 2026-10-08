@@ -325,11 +325,7 @@ fn open_content(state: &AppState, stored: &str) -> Result<String, String> {
 /* ---------------- 权限判定 ---------------- */
 
 /// 读权限（作用域由处理器的 `require_scope` / 显式 `allow` 管，这里只管「归属/授权」）。
-async fn can_read_config(
-    state: &AppState,
-    row: &store::configs::ConfigRow,
-    user_id: &str,
-) -> bool {
+async fn can_read_config(state: &AppState, row: &store::configs::ConfigRow, user_id: &str) -> bool {
     if row.is_public_active() {
         return true;
     }
@@ -601,7 +597,7 @@ async fn can_manage_opt(state: &AppState, ns_id: &str, user_id: Option<&str>) ->
 async fn get_config(
     State(state): State<AppState>,
     auth: Auth,
-    Path((id, slug)): Path<(String, Option<String>)>,
+    Path(helpers::IdSlug { id, slug }): Path<helpers::IdSlug>,
     uri: Uri,
 ) -> ApiResult<Response> {
     let ref_ = ref_from_params(&id, slug.as_deref());
@@ -628,9 +624,10 @@ async fn get_config(
     // 指定历史版本：只回那一版（同样受 reveal 约束）
     if let Some(rev) = web::query(&uri, "revision") {
         if !rev.trim().is_empty() {
-            let n: i64 = rev.trim().parse().map_err(|_| {
-                ApiError::bad_request("bad_request", "revision 需要是数字")
-            })?;
+            let n: i64 = rev
+                .trim()
+                .parse()
+                .map_err(|_| ApiError::bad_request("bad_request", "revision 需要是数字"))?;
             let r = store::configs::find_revision(state.pool(), &row.id, n)
                 .await
                 .map_err(ApiError::from_db)?
@@ -717,7 +714,10 @@ fn normalize_config_body(mut in_: ConfigBody) -> (ConfigBody, String) {
         in_.name = in_.slug.clone();
     }
     if !valid_config_slug(&in_.slug) {
-        return (in_, "配置 slug 需为 2-48 位小写字母、数字或连字符".to_string());
+        return (
+            in_,
+            "配置 slug 需为 2-48 位小写字母、数字或连字符".to_string(),
+        );
     }
     in_.name = truncate_chars(&in_.name, 80);
 
@@ -760,7 +760,10 @@ fn normalize_config_body(mut in_: ConfigBody) -> (ConfigBody, String) {
         return (in_, "状态只能是 active 或 archived".to_string());
     }
     if in_.secret && in_.visibility == "public" {
-        return (in_, "含敏感值的配置不能公开（去掉 public，或把 secret 关掉）".to_string());
+        return (
+            in_,
+            "含敏感值的配置不能公开（去掉 public，或把 secret 关掉）".to_string(),
+        );
     }
     in_.summary = truncate_chars(&in_.summary, 200);
     in_.note = truncate_chars(&in_.note, 200);
@@ -802,7 +805,10 @@ async fn create_config(
         .unwrap_or(0)
         >= CONFIG_MAX_PER_NAMESPACE
     {
-        return Err(ApiError::bad_request("bad_request", "该命名空间的配置数量已达上限"));
+        return Err(ApiError::bad_request(
+            "bad_request",
+            "该命名空间的配置数量已达上限",
+        ));
     }
     if store::configs::slug_exists(state.pool(), &ns.id, &body.slug)
         .await
@@ -897,7 +903,7 @@ struct ConfigPatchBody {
 async fn update_config(
     State(state): State<AppState>,
     auth: Auth,
-    Path((id, slug)): Path<(String, Option<String>)>,
+    Path(helpers::IdSlug { id, slug }): Path<helpers::IdSlug>,
     body: Bytes,
 ) -> ApiResult<Response> {
     let a = auth.require_scope("config:write")?;
@@ -906,9 +912,7 @@ async fn update_config(
         .await?
         .ok_or_else(|| ApiError::not_found("配置不存在"))?;
     if !can_write_config(&state, &row, &a.user_id).await {
-        return Err(ApiError::forbidden(
-            "你不是该命名空间的成员，无法修改配置",
-        ));
+        return Err(ApiError::forbidden("你不是该命名空间的成员，无法修改配置"));
     }
     let b: ConfigPatchBody = parse_body(&body)?;
 
@@ -999,7 +1003,10 @@ async fn update_config(
 
     let plain = b.content.unwrap_or_default();
     if plain.len() > CONFIG_MAX_BYTES {
-        return Err(ApiError::bad_request("bad_request", "配置内容超过上限（128 KB）"));
+        return Err(ApiError::bad_request(
+            "bad_request",
+            "配置内容超过上限（128 KB）",
+        ));
     }
     let sealed = seal_content(&state, &plain, merged.secret)?;
     let input = store::configs::ConfigInput {
@@ -1039,7 +1046,7 @@ async fn update_config(
 async fn delete_config(
     State(state): State<AppState>,
     auth: Auth,
-    Path((id, slug)): Path<(String, Option<String>)>,
+    Path(helpers::IdSlug { id, slug }): Path<helpers::IdSlug>,
 ) -> ApiResult<Response> {
     let a = auth.require_scope("config:write")?;
     let ref_ = ref_from_params(&id, slug.as_deref());
@@ -1047,9 +1054,7 @@ async fn delete_config(
         .await?
         .ok_or_else(|| ApiError::not_found("配置不存在"))?;
     if !can_write_config(&state, &row, &a.user_id).await {
-        return Err(ApiError::forbidden(
-            "你不是该命名空间的成员，无法删除配置",
-        ));
+        return Err(ApiError::forbidden("你不是该命名空间的成员，无法删除配置"));
     }
     if let Err(e) = store::configs::delete(state.pool(), &row.id).await {
         tracing::error!("删除配置失败: {e}");
@@ -1064,7 +1069,7 @@ async fn delete_config(
 async fn config_revisions(
     State(state): State<AppState>,
     auth: Auth,
-    Path((id, slug)): Path<(String, Option<String>)>,
+    Path(helpers::IdSlug { id, slug }): Path<helpers::IdSlug>,
 ) -> ApiResult<Response> {
     let ref_ = ref_from_params(&id, slug.as_deref());
     let row = find_config(&state, &ref_)
@@ -1114,7 +1119,7 @@ struct RollbackReq {
 async fn rollback_config(
     State(state): State<AppState>,
     auth: Auth,
-    Path((id, slug)): Path<(String, Option<String>)>,
+    Path(helpers::IdSlug { id, slug }): Path<helpers::IdSlug>,
     body: Bytes,
 ) -> ApiResult<Response> {
     let a = auth.require_scope("config:write")?;
@@ -1123,9 +1128,7 @@ async fn rollback_config(
         .await?
         .ok_or_else(|| ApiError::not_found("配置不存在"))?;
     if !can_write_config(&state, &row, &a.user_id).await {
-        return Err(ApiError::forbidden(
-            "你不是该命名空间的成员，无法回滚配置",
-        ));
+        return Err(ApiError::forbidden("你不是该命名空间的成员，无法回滚配置"));
     }
     let need_rev = || ApiError::bad_request("bad_request", "需要 revision（见 /revisions）");
     let rb: RollbackReq = serde_json::from_slice(&body).map_err(|_| need_rev())?;
@@ -1186,7 +1189,10 @@ async fn config_bundle(State(state): State<AppState>, auth: Auth, uri: Uri) -> A
     let ns_slug = web::query(&uri, "namespace").unwrap_or_default();
     let ns_slug = ns_slug.trim().to_string();
     if ns_slug.is_empty() {
-        return Err(ApiError::bad_request("bad_request", "需要 namespace（如 @team）"));
+        return Err(ApiError::bad_request(
+            "bad_request",
+            "需要 namespace（如 @team）",
+        ));
     }
     let ns_slug = ns_slug.trim_start_matches('@').to_string();
     let row = store::namespaces::by_slug(state.pool(), &ns_slug)
@@ -1239,8 +1245,14 @@ async fn config_bundle(State(state): State<AppState>, auth: Auth, uri: Uri) -> A
     let mut opts = store::configs::ListOpts {
         namespace_ids: vec![row.id.clone()],
         env: env.clone(),
-        kind: web::query(&uri, "kind").unwrap_or_default().trim().to_string(),
-        tag: web::query(&uri, "tag").unwrap_or_default().trim().to_string(),
+        kind: web::query(&uri, "kind")
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
+        tag: web::query(&uri, "tag")
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
         statuses: vec!["active".to_string()],
         limit: 200,
         ..Default::default()
@@ -1312,7 +1324,9 @@ mod tests {
         cfg.jwt_secret = "test-secret".to_string();
 
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        ncc_core::pool::migrate(&pool, crate::schema::DDL).await.unwrap();
+        ncc_core::pool::migrate(&pool, crate::schema::DDL)
+            .await
+            .unwrap();
         for (id, name) in [("U-1", "机主"), ("U-2", "成员"), ("U-9", "路人")] {
             sqlx::query(
                 "INSERT INTO users (id, email, name, pass_hash, plan, is_admin, disabled) VALUES (?, ?, ?, '', 'free', 0, 0)",
@@ -1331,13 +1345,16 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        sqlx::query("INSERT INTO ns_members (namespace_id, user_id, role) VALUES ('NS-1', 'U-2', 'member')")
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO ns_members (namespace_id, user_id, role) VALUES ('NS-1', 'U-2', 'member')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         // 字节目录只要求存在，配置族本身不写 blob；放 workspace 的 target 下，免得污染源码树。
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/test-configs-blobs");
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/test-configs-blobs");
         let blobs = Arc::new(LocalStorage::new(&dir, &cfg.public_url, "blobs").unwrap());
         let seal = Arc::new(SecretBox::new(&cfg.jwt_secret).unwrap());
         AppState {
@@ -1397,12 +1414,20 @@ mod tests {
         let resp = match r {
             Ok(resp) => resp,
             Err(e) => {
-                return (e.status, json!({"error": {"code": e.code, "message": e.message}}));
+                return (
+                    e.status,
+                    json!({"error": {"code": e.code, "message": e.message}}),
+                );
             }
         };
         let status = resp.status();
-        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
-        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
     }
 
     fn uri(s: &str) -> Uri {
@@ -1418,9 +1443,12 @@ mod tests {
         let st = test_state().await;
 
         let (status, v) = json_of(
-            create_config(State(st.clone()), session_auth("U-1"), bjson(&create_body("network")))
-                .await
-                ,
+            create_config(
+                State(st.clone()),
+                session_auth("U-1"),
+                bjson(&create_body("network")),
+            )
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
@@ -1436,11 +1464,13 @@ mod tests {
             get_config(
                 State(st.clone()),
                 session_auth("U-2"),
-                Path((id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
                 uri("/api/configs"),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -1452,11 +1482,13 @@ mod tests {
             get_config(
                 State(st.clone()),
                 session_auth("U-2"),
-                Path(("@team".to_string(), Some("network".to_string()))),
+                Path(helpers::IdSlug {
+                    id: "@team".to_string(),
+                    slug: Some("network".to_string()),
+                }),
                 uri("/api/configs/@team/network?reveal=1"),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(by_ref["config"]["content"], json!("a: 1"));
@@ -1467,11 +1499,13 @@ mod tests {
             update_config(
                 State(st.clone()),
                 session_auth("U-2"),
-                Path((id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
                 bjson(&json!({"summary": "改个备注", "tags": ["c"]})),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(meta["revisionAdded"], json!(false));
@@ -1483,11 +1517,13 @@ mod tests {
             update_config(
                 State(st.clone()),
                 session_auth("U-2"),
-                Path((id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
                 bjson(&json!({"content": "a: 2", "note": "改端口"})),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(upd["revisionAdded"], json!(true));
@@ -1495,9 +1531,15 @@ mod tests {
         assert_eq!(upd["config"]["content"], json!("a: 2"));
 
         let (_, revs) = json_of(
-            config_revisions(State(st.clone()), session_auth("U-2"), Path((id.clone(), None)))
-                .await
-                ,
+            config_revisions(
+                State(st.clone()),
+                session_auth("U-2"),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
+            )
+            .await,
         )
         .await;
         assert_eq!(revs["current"], json!(2));
@@ -1511,38 +1553,56 @@ mod tests {
             rollback_config(
                 State(st.clone()),
                 session_auth("U-2"),
-                Path((id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
                 bjson(&json!({"revision": 1})),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(rb["config"]["revision"], json!(3));
         assert_eq!(rb["config"]["content"], json!("a: 1"));
         assert_eq!(rb["config"]["rolledBackTo"], json!(1));
         let (_, revs2) = json_of(
-            config_revisions(State(st.clone()), session_auth("U-2"), Path((id.clone(), None)))
-                .await
-                ,
+            config_revisions(
+                State(st.clone()),
+                session_auth("U-2"),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
+            )
+            .await,
         )
         .await;
         assert_eq!(revs2["revisions"].as_array().unwrap().len(), 3);
         assert_eq!(revs2["revisions"][0]["note"], json!("回滚到 v1"));
 
         let (_, del) = json_of(
-            delete_config(State(st.clone()), session_auth("U-1"), Path((id.clone(), None)))
-                .await
-                ,
+            delete_config(
+                State(st.clone()),
+                session_auth("U-1"),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
+            )
+            .await,
         )
         .await;
         assert_eq!(del["ok"], json!(true));
         assert_eq!(del["ref"], json!("@team/network"));
 
         let (status, _) = json_of(
-            get_config(State(st.clone()), session_auth("U-1"), Path((id, None)), uri("/api/configs"))
-                .await
-                ,
+            get_config(
+                State(st.clone()),
+                session_auth("U-1"),
+                Path(helpers::IdSlug { id: id, slug: None }),
+                uri("/api/configs"),
+            )
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -1562,8 +1622,7 @@ mod tests {
                     "kind": "security", "secret": true, "content": plain,
                 })),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
@@ -1592,9 +1651,16 @@ mod tests {
 
         // 读取默认打码
         let (_, masked) = json_of(
-            get_config(State(st.clone()), session_auth("U-2"), Path((id.clone(), None)), uri("/api/configs"))
-                .await
-                ,
+            get_config(
+                State(st.clone()),
+                session_auth("U-2"),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
+                uri("/api/configs"),
+            )
+            .await,
         )
         .await;
         assert_eq!(masked["config"]["masked"], json!(true));
@@ -1608,22 +1674,33 @@ mod tests {
             get_config(
                 State(st.clone()),
                 key_auth("U-2", &["config:read"]),
-                Path((id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
                 uri("/api/configs?reveal=1"),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(plain_out["config"]["content"], json!(plain));
         assert_eq!(plain_out["config"]["masked"], json!(false));
-        assert_eq!(plain_out["config"]["contentChecksum"], json!(checksum_of(plain)));
+        assert_eq!(
+            plain_out["config"]["contentChecksum"],
+            json!(checksum_of(plain))
+        );
 
         // 历史列表不含内容
         let (_, revs) = json_of(
-            config_revisions(State(st.clone()), session_auth("U-2"), Path((id.clone(), None)))
-                .await
-                ,
+            config_revisions(
+                State(st.clone()),
+                session_auth("U-2"),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
+            )
+            .await,
         )
         .await;
         assert_eq!(revs["revisions"][0]["secret"], json!(true));
@@ -1635,11 +1712,13 @@ mod tests {
             get_config(
                 State(st.clone()),
                 session_auth("U-2"),
-                Path((id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
                 uri("/api/configs?revision=1&reveal=1"),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(rev1["config"]["revisionRequested"], json!(1));
@@ -1651,11 +1730,13 @@ mod tests {
             update_config(
                 State(st.clone()),
                 session_auth("U-1"),
-                Path((id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: id.clone(),
+                    slug: None,
+                }),
                 bjson(&json!({"secret": false})),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(off["revisionAdded"], json!(false));
@@ -1681,16 +1762,18 @@ mod tests {
                     "namespace": "team", "slug": "pub", "visibility": "public", "content": "x",
                 })),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         let pub_id = config_id(&pub_v);
         // 私有配置
         let (_, priv_v) = json_of(
-            create_config(State(st.clone()), session_auth("U-1"), bjson(&create_body("priv")))
-                .await
-                ,
+            create_config(
+                State(st.clone()),
+                session_auth("U-1"),
+                bjson(&create_body("priv")),
+            )
+            .await,
         )
         .await;
         let priv_id = config_id(&priv_v);
@@ -1700,20 +1783,29 @@ mod tests {
             get_config(
                 State(st.clone()),
                 anon(),
-                Path((pub_id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: pub_id.clone(),
+                    slug: None,
+                }),
                 uri("/api/configs?reveal=1"),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::OK);
 
         // 匿名读私有：当成不存在
         let (status, v) = json_of(
-            get_config(State(st.clone()), anon(), Path((priv_id.clone(), None)), uri("/api/configs"))
-                .await
-                ,
+            get_config(
+                State(st.clone()),
+                anon(),
+                Path(helpers::IdSlug {
+                    id: priv_id.clone(),
+                    slug: None,
+                }),
+                uri("/api/configs"),
+            )
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -1724,11 +1816,13 @@ mod tests {
             get_config(
                 State(st.clone()),
                 key_auth("U-9", &["config:read"]),
-                Path((priv_id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: priv_id.clone(),
+                    slug: None,
+                }),
                 uri("/api/configs"),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -1738,26 +1832,33 @@ mod tests {
             get_config(
                 State(st.clone()),
                 key_auth("U-2", &["registry:read"]),
-                Path((priv_id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: priv_id.clone(),
+                    slug: None,
+                }),
                 uri("/api/configs"),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
         assert_eq!(v["error"]["code"], json!("scope_required"));
-        assert_eq!(v["error"]["message"], json!("读取非公开配置需要作用域 config:read"));
+        assert_eq!(
+            v["error"]["message"],
+            json!("读取非公开配置需要作用域 config:read")
+        );
 
         // 历史接口同样的作用域要求
         let (status, _) = json_of(
             config_revisions(
                 State(st.clone()),
                 key_auth("U-2", &["registry:read"]),
-                Path((priv_id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: priv_id.clone(),
+                    slug: None,
+                }),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
@@ -1767,11 +1868,13 @@ mod tests {
             get_config(
                 State(st.clone()),
                 session_auth("U-1"),
-                Path((priv_id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: priv_id.clone(),
+                    slug: None,
+                }),
                 uri("/api/configs"),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -1781,15 +1884,20 @@ mod tests {
             update_config(
                 State(st.clone()),
                 session_auth("U-9"),
-                Path((priv_id.clone(), None)),
+                Path(helpers::IdSlug {
+                    id: priv_id.clone(),
+                    slug: None,
+                }),
                 bjson(&json!({"summary": "x"})),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(v["error"]["message"], json!("你不是该命名空间的成员，无法修改配置"));
+        assert_eq!(
+            v["error"]["message"],
+            json!("你不是该命名空间的成员，无法修改配置")
+        );
 
         // 写：缺 config:write 作用域
         let (status, _) = json_of(
@@ -1798,17 +1906,19 @@ mod tests {
                 key_auth("U-1", &["config:read"]),
                 bjson(&create_body("nope")),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
 
         // 成员（会话）可写
         let (status, _) = json_of(
-            create_config(State(st.clone()), session_auth("U-2"), bjson(&create_body("by-member")))
-                .await
-                ,
+            create_config(
+                State(st.clone()),
+                session_auth("U-2"),
+                bjson(&create_body("by-member")),
+            )
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
@@ -1848,12 +1958,9 @@ mod tests {
             ),
         ];
         for (body, want) in cases {
-            let (status, v) = json_of(
-                create_config(State(st.clone()), session_auth("U-1"), bjson(&body))
-                    .await
-                    ,
-            )
-            .await;
+            let (status, v) =
+                json_of(create_config(State(st.clone()), session_auth("U-1"), bjson(&body)).await)
+                    .await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{want}");
             assert_eq!(v["error"]["code"], json!("bad_request"));
             assert_eq!(v["error"]["message"], json!(want));
@@ -1868,8 +1975,7 @@ mod tests {
                     "namespace": "team", "slug": "big", "content": "x".repeat(CONFIG_MAX_BYTES + 1),
                 })),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1877,9 +1983,12 @@ mod tests {
 
         // 非法 JSON：回 Go 同款 400（而不是 axum 默认的 422）
         let (status, v) = json_of(
-            create_config(State(st.clone()), session_auth("U-1"), Bytes::from_static(b"{ not json"))
-                .await
-                ,
+            create_config(
+                State(st.clone()),
+                session_auth("U-1"),
+                Bytes::from_static(b"{ not json"),
+            )
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1892,8 +2001,7 @@ mod tests {
                 session_auth("U-1"),
                 bjson(&json!({"namespace": "ghost", "slug": "ok-slug"})),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1901,16 +2009,22 @@ mod tests {
 
         // 重复 slug
         let (status, _) = json_of(
-            create_config(State(st.clone()), session_auth("U-1"), bjson(&create_body("dup")))
-                .await
-                ,
+            create_config(
+                State(st.clone()),
+                session_auth("U-1"),
+                bjson(&create_body("dup")),
+            )
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
         let (status, v) = json_of(
-            create_config(State(st.clone()), session_auth("U-1"), bjson(&create_body("dup")))
-                .await
-                ,
+            create_config(
+                State(st.clone()),
+                session_auth("U-1"),
+                bjson(&create_body("dup")),
+            )
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::CONFLICT);
@@ -1919,9 +2033,12 @@ mod tests {
 
         // 回滚缺 revision / body 非法：同一个 400
         let (_, created) = json_of(
-            create_config(State(st.clone()), session_auth("U-1"), bjson(&create_body("rb")))
-                .await
-                ,
+            create_config(
+                State(st.clone()),
+                session_auth("U-1"),
+                bjson(&create_body("rb")),
+            )
+            .await,
         )
         .await;
         let rb_id = config_id(&created);
@@ -1930,26 +2047,33 @@ mod tests {
                 rollback_config(
                     State(st.clone()),
                     session_auth("U-1"),
-                    Path((rb_id.clone(), None)),
+                    Path(helpers::IdSlug {
+                        id: rb_id.clone(),
+                        slug: None,
+                    }),
                     bjson(&bad),
                 )
-                .await
-                ,
+                .await,
             )
             .await;
             assert_eq!(status, StatusCode::BAD_REQUEST);
-            assert_eq!(v["error"]["message"], json!("需要 revision（见 /revisions）"));
+            assert_eq!(
+                v["error"]["message"],
+                json!("需要 revision（见 /revisions）")
+            );
         }
         // 不存在的版本号
         let (status, v) = json_of(
             rollback_config(
                 State(st.clone()),
                 session_auth("U-1"),
-                Path((rb_id, None)),
+                Path(helpers::IdSlug {
+                    id: rb_id,
+                    slug: None,
+                }),
                 bjson(&json!({"revision": 9})),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
@@ -1976,18 +2100,15 @@ mod tests {
                         "content": format!("v-{slug}"),
                     })),
                 )
-                .await
-                ,
+                .await,
             )
             .await;
             assert_eq!(s, StatusCode::CREATED);
         }
 
         // 匿名列表：只看公开且 active
-        let (_, anon_list) = json_of(
-            list_configs(State(st.clone()), anon(), uri("/api/configs")).await,
-        )
-        .await;
+        let (_, anon_list) =
+            json_of(list_configs(State(st.clone()), anon(), uri("/api/configs")).await).await;
         assert_eq!(anon_list["configs"].as_array().unwrap().len(), 2);
         assert!(anon_list["configs"]
             .as_array()
@@ -1997,31 +2118,23 @@ mod tests {
 
         // 成员列表：公开 + 本空间私有
         let (_, member_list) = json_of(
-            list_configs(State(st.clone()), session_auth("U-2"), uri("/api/configs"))
-                .await
-                ,
+            list_configs(State(st.clone()), session_auth("U-2"), uri("/api/configs")).await,
         )
         .await;
         assert_eq!(member_list["total"], json!(4));
         assert_eq!(member_list["kindCounts"]["other"], json!(2)); // 只算公开的
 
         // 按 kind 过滤：非法 kind 回 400
-        let (status, v) = json_of(
-            list_configs(State(st.clone()), anon(), uri("/api/configs?kind=nope"))
-                .await
-                ,
-        )
-        .await;
+        let (status, v) =
+            json_of(list_configs(State(st.clone()), anon(), uri("/api/configs?kind=nope")).await)
+                .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(v["error"]["message"], json!("未知配置类型: nope"));
 
         // mine=1 需要登录
-        let (status, v) = json_of(
-            list_configs(State(st.clone()), anon(), uri("/api/configs?mine=1"))
-                .await
-                ,
-        )
-        .await;
+        let (status, v) =
+            json_of(list_configs(State(st.clone()), anon(), uri("/api/configs?mine=1")).await)
+                .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         assert_eq!(v["error"]["message"], json!("mine=1 需要登录或凭据"));
 
@@ -2032,8 +2145,7 @@ mod tests {
                 session_auth("U-9"),
                 uri("/api/configs/bundle?namespace=@team"),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
@@ -2045,8 +2157,7 @@ mod tests {
                 session_auth("U-2"),
                 uri("/api/configs/bundle?namespace=@team&env=prod"),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(bundle["secretsIncluded"], json!(false));
@@ -2079,8 +2190,7 @@ mod tests {
                 session_auth("U-2"),
                 uri("/api/configs/bundle?namespace=@team&env=prod&secrets=1&reveal=1"),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(bundle2["secretsIncluded"], json!(true));
@@ -2097,9 +2207,12 @@ mod tests {
 
         // bundle：缺 namespace
         let (status, v) = json_of(
-            config_bundle(State(st.clone()), session_auth("U-2"), uri("/api/configs/bundle"))
-                .await
-                ,
+            config_bundle(
+                State(st.clone()),
+                session_auth("U-2"),
+                uri("/api/configs/bundle"),
+            )
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -2117,7 +2230,10 @@ mod tests {
         assert_eq!(v["countScope"], json!("public+active"));
         assert_eq!(v["limits"]["bytes"], json!(131072));
         assert_eq!(v["envs"], json!(["any", "dev", "staging", "prod"]));
-        assert_eq!(v["formats"], json!(["json", "yaml", "toml", "env", "ini", "text", "shell"]));
+        assert_eq!(
+            v["formats"],
+            json!(["json", "yaml", "toml", "env", "ini", "text", "shell"])
+        );
 
         assert!(valid_config_slug("ab"));
         assert!(!valid_config_slug("a"));
@@ -2140,8 +2256,7 @@ mod tests {
                     "namespace": "team", "slug": "  My-Network  ", "content": "x",
                 })),
             )
-            .await
-            ,
+            .await,
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);

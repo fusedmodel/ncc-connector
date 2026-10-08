@@ -16,7 +16,7 @@
 //!
 //! 两边内容逐字相同，另一份在：
 //! * 节点侧 `ncc-registry/rust/crates/ncc-core`
-//! * 平台侧 `ncc-platform/server-rs/crates/ncc-core`
+//! * 平台侧 `ncc-platform/server/crates/ncc-core`
 //!
 //! 改这里的任何东西，记得把另一侧同步过来（本层只放两个服务都会用到的东西，
 //! 别把某个服务独有的逻辑沉下来 —— 那正是「改一处漏一处」的开始）。

@@ -15,7 +15,12 @@ pub fn new_id(prefix: &str) -> String {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    format!("{}-{}-{}", prefix, base36(millis), crate::crypto::rand_hex(4))
+    format!(
+        "{}-{}-{}",
+        prefix,
+        base36(millis),
+        crate::crypto::rand_hex(4)
+    )
 }
 
 /// 十进制转 base36。
@@ -50,7 +55,11 @@ pub fn slugify(s: &str) -> String {
         }
     }
     let out = out.trim_matches('-').to_string();
-    let out = if out.len() > 48 { out[..48].to_string() } else { out };
+    let out = if out.len() > 48 {
+        out[..48].to_string()
+    } else {
+        out
+    };
     if out.is_empty() {
         "x".to_string()
     } else {

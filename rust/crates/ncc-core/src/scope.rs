@@ -59,11 +59,7 @@ pub const DEFAULT_SCOPES: &[&str] = &[
 pub const INDEX_SCOPES: &[&str] = &["index:read", "index:write"];
 
 /// 接入票据兑换出的节点令牌默认作用域：能上报心跳、能看/拉公开制品，但不能发布。
-pub const NODE_TICKET_SCOPES: &[&str] = &[
-    "nodes:write",
-    "registry:read",
-    "registry:download",
-];
+pub const NODE_TICKET_SCOPES: &[&str] = &["nodes:write", "registry:read", "registry:download"];
 
 /// 可用作用域目录。
 pub const ALL_SCOPES: &[&str] = &[

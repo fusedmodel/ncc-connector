@@ -26,8 +26,15 @@ pub struct User {
 const COLS: &str = "id, email, name, pass_hash, plan, is_admin, disabled, disabled_at, admin_note, last_login_at, created_at";
 
 /// 建账号；库为空时该账号成为管理员。
-pub async fn create(pool: &SqlitePool, name: &str, email: &str, pass_hash: &str) -> Result<User, sqlx::Error> {
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(pool).await?;
+pub async fn create(
+    pool: &SqlitePool,
+    name: &str,
+    email: &str,
+    pass_hash: &str,
+) -> Result<User, sqlx::Error> {
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await?;
     let u = User {
         id: ncc_core::ids::new_id("U"),
         email: email.trim().to_lowercase(),
@@ -71,7 +78,10 @@ pub async fn by_email(pool: &SqlitePool, email: &str) -> Result<Option<User>, sq
 
 pub async fn by_id(pool: &SqlitePool, id: &str) -> Result<Option<User>, sqlx::Error> {
     let sql = format!("SELECT {COLS} FROM users WHERE id = ?");
-    sqlx::query_as::<_, User>(&sql).bind(id).fetch_optional(pool).await
+    sqlx::query_as::<_, User>(&sql)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
 }
 
 pub async fn touch_login(pool: &SqlitePool, id: &str) -> Result<(), sqlx::Error> {
@@ -103,18 +113,29 @@ pub async fn update_pass(pool: &SqlitePool, id: &str, hash: &str) -> Result<(), 
 
 /// 统计用户数（`/api/meta`、健康检查、集群上报都用它）。
 pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT COUNT(*) FROM users").fetch_one(pool).await
+    sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await
 }
 
 /// 是否已存在该邮箱。
 pub async fn email_taken(pool: &SqlitePool, email: &str) -> Result<bool, sqlx::Error> {
-    exists(pool, "SELECT COUNT(*) FROM users WHERE email = ?", &[&email.trim().to_lowercase()]).await
+    exists(
+        pool,
+        "SELECT COUNT(*) FROM users WHERE email = ?",
+        &[&email.trim().to_lowercase()],
+    )
+    .await
 }
 
 /// 管理员名单（按创建时间正序）。
 pub async fn list(pool: &SqlitePool, limit: i64, offset: i64) -> Result<Vec<User>, sqlx::Error> {
     let sql = format!("SELECT {COLS} FROM users ORDER BY created_at ASC LIMIT ? OFFSET ?");
-    sqlx::query_as::<_, User>(&sql).bind(limit).bind(offset).fetch_all(pool).await
+    sqlx::query_as::<_, User>(&sql)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
 }
 
 /// 治理动作：禁用/启用、笔记。`disabled=true` 时记下时间 —— 节点治理要看得出

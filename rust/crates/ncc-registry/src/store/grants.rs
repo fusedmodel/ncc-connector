@@ -13,10 +13,17 @@ use super::exists;
 pub const KIND_ARTIFACT: &str = "artifact";
 pub const KIND_NODE: &str = "node";
 pub const KIND_CONFIG: &str = "config";
-pub const KIND_P2P: &str = "p2p";
+pub const KIND_TRACE: &str = "trace";
+pub const KIND_STATE: &str = "state";
 
 pub fn valid_kind(k: &str) -> bool {
-    matches!(k, KIND_ARTIFACT | KIND_NODE | KIND_CONFIG | KIND_P2P)
+    // 与 Go 的 `model.GrantKinds` 逐项一致：`trace`（运行轨迹）与 `state`
+    // （三样状态：知识库 / 记忆 / 检查点）是轨迹族与状态族读取私有内容时真正会查的种类，
+    // 少一个就会出现「能授权却不能建」的怪事（`ncc grant set --kind trace` 被 400 拒）。
+    matches!(
+        k,
+        KIND_ARTIFACT | KIND_NODE | KIND_CONFIG | KIND_TRACE | KIND_STATE
+    )
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -31,18 +38,26 @@ pub struct Grant {
     pub updated_at: Option<String>,
 }
 
-const COLS: &str = "id, owner_id, grantee_user_id, kind, namespace_id, note, created_at, updated_at";
+const COLS: &str =
+    "id, owner_id, grantee_user_id, kind, namespace_id, note, created_at, updated_at";
 
 /// 我发出的授权。
 pub async fn list_owned(pool: &SqlitePool, owner_id: &str) -> Result<Vec<Grant>, sqlx::Error> {
     let sql = format!("SELECT {COLS} FROM grants WHERE owner_id = ? ORDER BY created_at DESC");
-    sqlx::query_as::<_, Grant>(&sql).bind(owner_id).fetch_all(pool).await
+    sqlx::query_as::<_, Grant>(&sql)
+        .bind(owner_id)
+        .fetch_all(pool)
+        .await
 }
 
 /// 我收到的授权。
 pub async fn list_received(pool: &SqlitePool, grantee_id: &str) -> Result<Vec<Grant>, sqlx::Error> {
-    let sql = format!("SELECT {COLS} FROM grants WHERE grantee_user_id = ? ORDER BY created_at DESC");
-    sqlx::query_as::<_, Grant>(&sql).bind(grantee_id).fetch_all(pool).await
+    let sql =
+        format!("SELECT {COLS} FROM grants WHERE grantee_user_id = ? ORDER BY created_at DESC");
+    sqlx::query_as::<_, Grant>(&sql)
+        .bind(grantee_id)
+        .fetch_all(pool)
+        .await
 }
 
 pub async fn create(
@@ -125,13 +140,19 @@ mod tests {
     #[tokio::test]
     async fn 授权与判断() {
         let p = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        ncc_core::pool::migrate(&p, crate::schema::DDL).await.unwrap();
-        let g = create(&p, "U-1", "U-2", KIND_ARTIFACT, "NS-1", "").await.unwrap();
+        ncc_core::pool::migrate(&p, crate::schema::DDL)
+            .await
+            .unwrap();
+        let g = create(&p, "U-1", "U-2", KIND_ARTIFACT, "NS-1", "")
+            .await
+            .unwrap();
         assert!(has(&p, "U-1", "U-2", KIND_ARTIFACT, "NS-1").await);
         // 限定命名空间的授权不外溢到别的命名空间
         assert!(!has(&p, "U-1", "U-2", KIND_ARTIFACT, "NS-OTHER").await);
         // 不限命名空间（空串）的授权对任意命名空间都成立
-        let global = create(&p, "U-1", "U-2", KIND_ARTIFACT, "", "").await.unwrap();
+        let global = create(&p, "U-1", "U-2", KIND_ARTIFACT, "", "")
+            .await
+            .unwrap();
         assert!(has(&p, "U-1", "U-2", KIND_ARTIFACT, "NS-OTHER").await);
         delete(&p, &global.id, "U-1").await.unwrap();
         // kind 之间不互相蕴含

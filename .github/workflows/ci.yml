@@ -1,8 +1,9 @@
 name: CI
 
-# 本仓库**没有任何 Go 单测**（`find -name '*_test.go'` 零命中）——
-# scripts/smoke.sh 是唯一的回归网，所以它必须在这一层跑起来。
-# 它自带启停：起一个 master + 一个 worker（端口 18282/18283），跑完自己收尾。
+# 回归网有两层，缺一不可：
+#   1. `cargo test` —— rust/ 里的单元测试（库层逻辑、协议细节、加解密与令牌）；
+#   2. `scripts/smoke.sh` —— 真起两个进程（master + worker）跑 HTTP 面，含 CLI 互通。
+# 冒烟脚本自带启停（端口 18282/18283），跑完自己收尾。
 on:
   push:
     branches: [main]
@@ -15,25 +16,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          go-version-file: go.mod
-          cache: true
+          components: rustfmt, clippy
 
-      - name: gofmt（有未格式化的文件就失败）
-        run: |
-          unformatted="$(gofmt -l .)"
-          if [[ -n "${unformatted}" ]]; then
-            echo "以下文件未格式化："
-            echo "${unformatted}"
-            exit 1
-          fi
+      # 缓存 rust/target（工作区在 rust/ 子目录，要显式告诉它）
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
 
-      - name: go vet
-        run: go vet ./...
+      - name: cargo fmt（有未格式化的文件就失败）
+        working-directory: rust
+        run: cargo fmt --all -- --check
 
-      - name: go build
-        run: go build ./...
+      # 不加 `-D warnings`：还有一批 `never used` 是**刻意留着的完整数据访问 API**
+      # （store 层的读写函数只有在接线处才被调用，部分目前只有测试在用）。
+      # 用 `-D warnings` 会逼着人删掉这些函数或糊上 `allow(dead_code)`，两样都更糟。
+      - name: cargo clippy
+        working-directory: rust
+        run: cargo clippy --all-targets
+
+      - name: cargo test
+        working-directory: rust
+        run: cargo test --all
 
       - name: 冒烟测试（master + worker 两节点）
         run: bash scripts/smoke.sh

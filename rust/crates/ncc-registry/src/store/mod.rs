@@ -57,7 +57,9 @@ pub fn marshal_list(v: &[String]) -> String {
 }
 
 /// 按类型统计已发布制品数（`/api/registry/kinds` 用）。
-pub async fn kind_counts(pool: &SqlitePool) -> Result<std::collections::HashMap<String, i64>, sqlx::Error> {
+pub async fn kind_counts(
+    pool: &SqlitePool,
+) -> Result<std::collections::HashMap<String, i64>, sqlx::Error> {
     let rows: Vec<(String, i64)> =
         sqlx::query_as("SELECT kind, COUNT(*) FROM artifacts GROUP BY kind")
             .fetch_all(pool)

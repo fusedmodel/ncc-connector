@@ -1,9 +1,4 @@
-# 构建产物
-# 注意：这里必须是 /ncc-registry 而不是裸的 ncc-registry ——
-# 裸模式匹配任意层级，会把 cmd/ncc-registry/ 这个目录整个忽略掉（文件写了却进不了 commit）。
-/dist/
-/ncc-registry
-# Rust 版（rust/）的构建产物
+# 构建产物（Rust 工作区在 rust/）
 rust/target/
 
 # 运行数据（库 + blobs + 节点身份 + 密钥）

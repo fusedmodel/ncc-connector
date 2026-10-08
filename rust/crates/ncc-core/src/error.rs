@@ -104,7 +104,9 @@ pub fn ok(body: serde_json::Value) -> Response {
 /// 为什么要有这条兜底：迁移是一族一族做的，漏掉的路由如果静默 404，
 /// 排查时最容易被误判成「路由写错」。501 + 明确提示能一眼看出是「还没搬」。
 /// 给一个 Router 挂上「未迁移」兜底（只影响未匹配的路径）。
-pub fn with_pending_fallback<S: Clone + Send + Sync + 'static>(router: axum::Router<S>) -> axum::Router<S> {
+pub fn with_pending_fallback<S: Clone + Send + Sync + 'static>(
+    router: axum::Router<S>,
+) -> axum::Router<S> {
     router.fallback(fallback_not_migrated)
 }
 

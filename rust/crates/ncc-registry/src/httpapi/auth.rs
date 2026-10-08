@@ -76,7 +76,11 @@ async fn register(State(state): State<AppState>, Json(body): Json<CredReq>) -> A
     let code = body.invite_code.trim();
     if !state.cfg().invite_allows(code) {
         return Err(if code.is_empty() {
-            ApiError::new(StatusCode::FORBIDDEN, "invite_required", "本节点需要邀请码才能注册")
+            ApiError::new(
+                StatusCode::FORBIDDEN,
+                "invite_required",
+                "本节点需要邀请码才能注册",
+            )
         } else {
             ApiError::new(StatusCode::FORBIDDEN, "invite_invalid", "邀请码不正确")
         });
@@ -105,7 +109,8 @@ async fn register(State(state): State<AppState>, Json(body): Json<CredReq>) -> A
         name = name.chars().take(40).collect();
     }
 
-    let hash = hash_password(&body.password).map_err(|e| ApiError::internal(format!("密码处理失败: {e}")))?;
+    let hash = hash_password(&body.password)
+        .map_err(|e| ApiError::internal(format!("密码处理失败: {e}")))?;
     let u = store::users::create(state.pool(), &name, &email, &hash)
         .await
         .map_err(|e| {
@@ -124,7 +129,12 @@ async fn register(State(state): State<AppState>, Json(body): Json<CredReq>) -> A
     .await
     .map_err(ApiError::from_db)?;
 
-    let token = crate::jwt::sign_user(&state.cfg().jwt_secret, &u.id, &u.email, state.cfg().jwt_ttl);
+    let token = crate::jwt::sign_user(
+        &state.cfg().jwt_secret,
+        &u.id,
+        &u.email,
+        state.cfg().jwt_ttl,
+    );
     Ok(helpers::ok_status(
         StatusCode::CREATED,
         json!({"token": token, "user": user_view(&u)}),
@@ -156,8 +166,15 @@ async fn login(State(state): State<AppState>, Json(body): Json<CredReq>) -> ApiR
         ));
     }
     let _ = store::users::touch_login(state.pool(), &u.id).await;
-    let token = crate::jwt::sign_user(&state.cfg().jwt_secret, &u.id, &u.email, state.cfg().jwt_ttl);
-    Ok(helpers::ok_json(json!({"token": token, "user": user_view(&u)})))
+    let token = crate::jwt::sign_user(
+        &state.cfg().jwt_secret,
+        &u.id,
+        &u.email,
+        state.cfg().jwt_ttl,
+    );
+    Ok(helpers::ok_json(
+        json!({"token": token, "user": user_view(&u)}),
+    ))
 }
 
 fn user_view(u: &store::users::User) -> serde_json::Value {
@@ -236,7 +253,9 @@ async fn patch_me(
     }
     if !body.new_password.is_empty() {
         if !a.session {
-            return Err(ApiError::forbidden("改密码需要用户会话（API-Key 不可代改）"));
+            return Err(ApiError::forbidden(
+                "改密码需要用户会话（API-Key 不可代改）",
+            ));
         }
         if !verify_password(&body.password, &u.pass_hash) {
             return Err(ApiError::unauthorized("原密码不正确"));
@@ -276,7 +295,9 @@ async fn list_keys(State(state): State<AppState>, auth: Auth) -> ApiResult<Respo
             })
         })
         .collect();
-    Ok(helpers::ok_json(json!({"keys": items, "total": items.len()})))
+    Ok(helpers::ok_json(
+        json!({"keys": items, "total": items.len()}),
+    ))
 }
 
 /// POST /api/auth/keys —— 需要 `keys:write`
@@ -287,11 +308,17 @@ async fn create_key(
 ) -> ApiResult<Response> {
     let a = auth.require_scope("keys:write")?;
     let scopes: Vec<String> = if body.scopes.is_empty() {
-        scope::DEFAULT_SCOPES.iter().map(|s| s.to_string()).collect()
+        scope::DEFAULT_SCOPES
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     } else {
         for s in &body.scopes {
             if !scope::valid_scope(s) {
-                return Err(ApiError::bad_request("bad_request", format!("未知作用域 {s}")));
+                return Err(ApiError::bad_request(
+                    "bad_request",
+                    format!("未知作用域 {s}"),
+                ));
             }
         }
         body.scopes.clone()

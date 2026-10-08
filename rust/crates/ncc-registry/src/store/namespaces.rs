@@ -93,18 +93,27 @@ async fn insert(
 pub async fn by_slug(pool: &SqlitePool, slug: &str) -> Result<Option<Namespace>, sqlx::Error> {
     let sql = format!("SELECT {COLS} FROM namespaces WHERE slug = ?");
     let slug = slug.trim().trim_start_matches('@');
-    sqlx::query_as::<_, Namespace>(&sql).bind(slug).fetch_optional(pool).await
+    sqlx::query_as::<_, Namespace>(&sql)
+        .bind(slug)
+        .fetch_optional(pool)
+        .await
 }
 
 pub async fn by_id(pool: &SqlitePool, id: &str) -> Result<Option<Namespace>, sqlx::Error> {
     let sql = format!("SELECT {COLS} FROM namespaces WHERE id = ?");
-    sqlx::query_as::<_, Namespace>(&sql).bind(id).fetch_optional(pool).await
+    sqlx::query_as::<_, Namespace>(&sql)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
 }
 
 /// 用户的个人命名空间。
 pub async fn personal(pool: &SqlitePool, user_id: &str) -> Result<Option<Namespace>, sqlx::Error> {
     let sql = format!("SELECT {COLS} FROM namespaces WHERE owner_id = ? AND type = 'account'");
-    sqlx::query_as::<_, Namespace>(&sql).bind(user_id).fetch_optional(pool).await
+    sqlx::query_as::<_, Namespace>(&sql)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
 }
 
 /// 用户能看到的全部命名空间：自己的 + 作为成员加入的。
@@ -139,7 +148,12 @@ pub async fn is_member(pool: &SqlitePool, ns_id: &str, user_id: &str) -> bool {
     .unwrap_or(false)
 }
 
-pub async fn add_member(pool: &SqlitePool, ns_id: &str, user_id: &str, role: &str) -> Result<(), sqlx::Error> {
+pub async fn add_member(
+    pool: &SqlitePool,
+    ns_id: &str,
+    user_id: &str,
+    role: &str,
+) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT OR IGNORE INTO ns_members (namespace_id, user_id, role) VALUES (?, ?, ?)")
         .bind(ns_id)
         .bind(user_id)
@@ -156,7 +170,9 @@ mod tests {
 
     async fn pool() -> SqlitePool {
         let p = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        ncc_core::pool::migrate(&p, crate::schema::DDL).await.unwrap();
+        ncc_core::pool::migrate(&p, crate::schema::DDL)
+            .await
+            .unwrap();
         p
     }
 
@@ -165,7 +181,9 @@ mod tests {
         let p = pool().await;
         let a = create_account(&p, "U-1", "张三", "zhangsan").await.unwrap();
         assert_eq!(a.slug, "zhangsan");
-        let b = create_account(&p, "U-2", "张三二", "zhangsan").await.unwrap();
+        let b = create_account(&p, "U-2", "张三二", "zhangsan")
+            .await
+            .unwrap();
         assert!(b.slug.starts_with("zhangsan-"));
         assert_ne!(a.slug, b.slug);
     }
@@ -173,7 +191,13 @@ mod tests {
     #[tokio::test]
     async fn 组织_slug_非法或重复返回_none() {
         let p = pool().await;
-        assert!(create_org(&p, "U-1", "OK-Slug", "组织").await.unwrap().is_some());
-        assert!(create_org(&p, "U-1", "ok-slug", "重名").await.unwrap().is_none());
+        assert!(create_org(&p, "U-1", "OK-Slug", "组织")
+            .await
+            .unwrap()
+            .is_some());
+        assert!(create_org(&p, "U-1", "ok-slug", "重名")
+            .await
+            .unwrap()
+            .is_none());
     }
 }

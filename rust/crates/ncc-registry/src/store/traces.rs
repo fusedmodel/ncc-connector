@@ -99,8 +99,13 @@ pub const TRACE_STEP_IO: &str = "io";
 pub const TRACE_STEP_NOTE: &str = "note";
 pub const TRACE_STEP_GUARD: &str = "guard";
 
-pub const TRACE_STEP_TYPES: &[&str] =
-    &[TRACE_STEP_LLM, TRACE_STEP_TOOL, TRACE_STEP_IO, TRACE_STEP_NOTE, TRACE_STEP_GUARD];
+pub const TRACE_STEP_TYPES: &[&str] = &[
+    TRACE_STEP_LLM,
+    TRACE_STEP_TOOL,
+    TRACE_STEP_IO,
+    TRACE_STEP_NOTE,
+    TRACE_STEP_GUARD,
+];
 
 pub fn valid_trace_step_type(t: &str) -> bool {
     TRACE_STEP_TYPES.contains(&t)
@@ -121,8 +126,9 @@ pub const TRACE_PREVIEW_MAX: usize = 512;
 pub const TRACE_MAX_TAGS: usize = 32;
 
 /// 常用标注键（顺序即展示顺序）。
-pub const TRACE_LABEL_KEYS: &[&str] =
-    &["grade", "reward", "score", "task", "split", "failure", "reviewer", "note"];
+pub const TRACE_LABEL_KEYS: &[&str] = &[
+    "grade", "reward", "score", "task", "split", "failure", "reviewer", "note",
+];
 
 /// 常用标注键的说明：`[中文, 英文, 中文说明, 英文说明]`。
 ///
@@ -258,7 +264,11 @@ pub fn trace_digest_core(d: &Value) -> String {
         seg(&mut b, &format!("source.{k}"), &s(&format!("/source/{k}")));
     }
     for k in ["ref", "kind", "version", "digest", "engine", "policy"] {
-        seg(&mut b, &format!("subject.{k}"), &s(&format!("/subject/{k}")));
+        seg(
+            &mut b,
+            &format!("subject.{k}"),
+            &s(&format!("/subject/{k}")),
+        );
     }
     seg(&mut b, "model.provider", &s("/model/provider"));
     seg(&mut b, "model.name", &s("/model/name"));
@@ -411,7 +421,11 @@ pub fn validate_trace(d: &Value) -> Vec<TraceIssue> {
     };
 
     if s("/spec") != TRACE_SPEC {
-        errf!(format!("spec 必须是 {}，当前是 \"{}\"", TRACE_SPEC, s("/spec")));
+        errf!(format!(
+            "spec 必须是 {}，当前是 \"{}\"",
+            TRACE_SPEC,
+            s("/spec")
+        ));
     }
     let id = s("/id");
     if id.trim().is_empty() {
@@ -464,13 +478,24 @@ pub fn validate_trace(d: &Value) -> Vec<TraceIssue> {
     let steps = d.get("steps").and_then(|v| v.as_array());
     let step_count = steps.map(|a| a.len()).unwrap_or(0);
     if step_count > TRACE_MAX_STEPS {
-        errf!(format!("步骤太多：{}（上限 {}）", step_count, TRACE_MAX_STEPS));
+        errf!(format!(
+            "步骤太多：{}（上限 {}）",
+            step_count, TRACE_MAX_STEPS
+        ));
     }
-    let tag_count = d.get("tags").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+    let tag_count = d
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
     if tag_count > TRACE_MAX_TAGS {
-        errf!(format!("tags 太多：{}（上限 {}）", tag_count, TRACE_MAX_TAGS));
+        errf!(format!(
+            "tags 太多：{}（上限 {}）",
+            tag_count, TRACE_MAX_TAGS
+        ));
     }
-    let step_str = |st: &Value, k: &str| st.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let step_str =
+        |st: &Value, k: &str| st.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
     if let Some(steps) = steps {
         for (i, st) in steps.iter().enumerate() {
             let ty = step_str(st, "type");
@@ -484,7 +509,10 @@ pub fn validate_trace(d: &Value) -> Vec<TraceIssue> {
             }
             let si = st.get("i").and_then(|v| v.as_i64()).unwrap_or(0);
             if si != i as i64 {
-                warnf!(format!("步骤 {} 的序号是 {}（建议与顺序一致，便于对照）", i, si));
+                warnf!(format!(
+                    "步骤 {} 的序号是 {}（建议与顺序一致，便于对照）",
+                    i, si
+                ));
             }
             if st.get("ms").and_then(|v| v.as_i64()).unwrap_or(0) < 0 {
                 errf!(format!("步骤 {} 的 ms 不能为负", i));
@@ -525,7 +553,10 @@ pub fn validate_trace(d: &Value) -> Vec<TraceIssue> {
     if !digest.is_empty() {
         let want = trace_digest(d);
         if want != digest {
-            errf!(format!("digest 与文档内容不符：文档算出 {}，收到 {}", want, digest));
+            errf!(format!(
+                "digest 与文档内容不符：文档算出 {}，收到 {}",
+                want, digest
+            ));
         }
     }
     if out.is_empty() && digest.is_empty() {
@@ -832,8 +863,7 @@ const PROJ_COLS: &str = "t.id, t.trace_id, t.kind, t.status, t.at, t.duration_ms
      t.agent_name, t.input_tokens, t.output_tokens, t.cost_usd_micros, t.eval_grade, t.eval_reward, \
      t.eval_score, t.eval_split, t.label_count";
 
-const LABEL_COLS: &str =
-    "id, trace_id, `key`, value, value_num, has_num, `by`, note, created_at";
+const LABEL_COLS: &str = "id, trace_id, `key`, value, value_num, has_num, `by`, note, created_at";
 
 /* ---------------- 检索条件 ---------------- */
 
@@ -932,7 +962,9 @@ impl TraceListOpts {
         }
         if !self.model.is_empty() {
             // 模型用 name 或 provider/name 两种写法都能命中。
-            cs.push("(t.model_name = ? OR t.model_provider || '/' || t.model_name = ?)".to_string());
+            cs.push(
+                "(t.model_name = ? OR t.model_provider || '/' || t.model_name = ?)".to_string(),
+            );
             bs.push(self.model.clone());
             bs.push(self.model.clone());
         }
@@ -1052,8 +1084,16 @@ pub fn parse_trace_doc(mut value: Value) -> Result<ParsedTrace, TraceWriteError>
     normalize_trace(&mut value);
     let doc = TraceDoc::deserialize(&value)
         .map_err(|e| TraceWriteError::BadDoc(format!("不是一份轨迹文档: {e}")))?;
-    let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let digest = value.get("digest").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let id = value
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let digest = value
+        .get("digest")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let doc_json = serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string());
     let at = doc.at.clone();
     Ok(ParsedTrace {
@@ -1183,9 +1223,8 @@ pub async fn list_traces(
 ) -> Result<(Vec<TraceRow>, i64), sqlx::Error> {
     let (cs, bs) = o.conditions();
     let w = where_sql(&cs);
-    let count_sql = format!(
-        "SELECT COUNT(*) FROM traces t JOIN namespaces ns ON ns.id = t.namespace_id{w}"
-    );
+    let count_sql =
+        format!("SELECT COUNT(*) FROM traces t JOIN namespaces ns ON ns.id = t.namespace_id{w}");
     let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
     for b in &bs {
         cq = cq.bind(b);
@@ -1646,7 +1685,11 @@ pub fn rfc3339_utc(s: &str) -> Option<String> {
 /// 与 Go 的 `markBuiltinUsed(nsID, "trace")` → `EnsureBuiltinCollection` 同效：
 /// 声明是代码里的常量，记录要挂在一行 `collections` 上，所以「取用即声明」。
 /// 这些常量与 `model/builtin.go` 的声明逐字对应（字段语法、索引、只追加）。
-pub async fn mark_builtin_used(pool: &SqlitePool, ns_id: &str, kind: &str) -> Result<(), sqlx::Error> {
+pub async fn mark_builtin_used(
+    pool: &SqlitePool,
+    ns_id: &str,
+    kind: &str,
+) -> Result<(), sqlx::Error> {
     if ns_id.is_empty() {
         return Ok(());
     }
@@ -1714,8 +1757,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ncc-traces-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let p = ncc_core::pool::open_sqlite(&dir.join("t.db")).await.unwrap();
-        ncc_core::pool::migrate(&p, crate::schema::DDL).await.unwrap();
+        let p = ncc_core::pool::open_sqlite(&dir.join("t.db"))
+            .await
+            .unwrap();
+        ncc_core::pool::migrate(&p, crate::schema::DDL)
+            .await
+            .unwrap();
         p
     }
 
@@ -1840,23 +1887,60 @@ mod tests {
     fn 校验拦住必须拦的() {
         let mut good = vector_doc();
         normalize_trace(&mut good);
-        assert!(!trace_has_error(&validate_trace(&good)), "{:?}", validate_trace(&good));
+        assert!(
+            !trace_has_error(&validate_trace(&good)),
+            "{:?}",
+            validate_trace(&good)
+        );
 
         let cases: Vec<(&str, Box<dyn Fn(&mut Value)>)> = vec![
-            ("spec 不对", Box::new(|d: &mut Value| d["spec"] = Value::String("ncc-trace/v0".into()))),
-            ("缺 id", Box::new(|d: &mut Value| d["id"] = Value::String(String::new()))),
-            ("kind 不认识", Box::new(|d: &mut Value| d["kind"] = Value::String("chat".into()))),
-            ("status 不认识", Box::new(|d: &mut Value| d["status"] = Value::String("done".into()))),
-            ("payload 不认识", Box::new(|d: &mut Value| d["payload"] = Value::String("everything".into()))),
-            ("at 不是 RFC3339", Box::new(|d: &mut Value| d["at"] = Value::String("2026-09-26 10:00".into()))),
-            ("负耗时", Box::new(|d: &mut Value| d["durationMs"] = Value::from(-1))),
-            ("负 token", Box::new(|d: &mut Value| d["usage"]["inputTokens"] = Value::from(-5))),
-            ("步骤类型不认识", Box::new(|d: &mut Value| d["steps"][0]["type"] = Value::String("think".into()))),
-            ("声明 digest 却带原文", Box::new(|d: &mut Value| {
-                d["payload"] = Value::String("digest".into());
-                d["steps"][0]["in"] = Value::String("原文".into());
-            })),
-            ("摘要被改过", Box::new(|d: &mut Value| d["digest"] = Value::String("sha256:deadbeef".into()))),
+            (
+                "spec 不对",
+                Box::new(|d: &mut Value| d["spec"] = Value::String("ncc-trace/v0".into())),
+            ),
+            (
+                "缺 id",
+                Box::new(|d: &mut Value| d["id"] = Value::String(String::new())),
+            ),
+            (
+                "kind 不认识",
+                Box::new(|d: &mut Value| d["kind"] = Value::String("chat".into())),
+            ),
+            (
+                "status 不认识",
+                Box::new(|d: &mut Value| d["status"] = Value::String("done".into())),
+            ),
+            (
+                "payload 不认识",
+                Box::new(|d: &mut Value| d["payload"] = Value::String("everything".into())),
+            ),
+            (
+                "at 不是 RFC3339",
+                Box::new(|d: &mut Value| d["at"] = Value::String("2026-09-26 10:00".into())),
+            ),
+            (
+                "负耗时",
+                Box::new(|d: &mut Value| d["durationMs"] = Value::from(-1)),
+            ),
+            (
+                "负 token",
+                Box::new(|d: &mut Value| d["usage"]["inputTokens"] = Value::from(-5)),
+            ),
+            (
+                "步骤类型不认识",
+                Box::new(|d: &mut Value| d["steps"][0]["type"] = Value::String("think".into())),
+            ),
+            (
+                "声明 digest 却带原文",
+                Box::new(|d: &mut Value| {
+                    d["payload"] = Value::String("digest".into());
+                    d["steps"][0]["in"] = Value::String("原文".into());
+                }),
+            ),
+            (
+                "摘要被改过",
+                Box::new(|d: &mut Value| d["digest"] = Value::String("sha256:deadbeef".into())),
+            ),
         ];
         for (name, f) in cases {
             let mut d = vector_doc();
@@ -1948,8 +2032,20 @@ mod tests {
         let p = pool("visibility").await;
         let (u1, ns1) = mk_ns(&p, "alice").await;
         let (_u2, ns2) = mk_ns(&p, "bob").await;
-        seed(&p, &ns1, &u1, simple_doc("TRC-a", TRACE_OK, "@alice/skill", "0.1.0")).await;
-        seed(&p, &ns2, &u1, simple_doc("TRC-b", TRACE_OK, "@bob/other", "0.2.0")).await;
+        seed(
+            &p,
+            &ns1,
+            &u1,
+            simple_doc("TRC-a", TRACE_OK, "@alice/skill", "0.1.0"),
+        )
+        .await;
+        seed(
+            &p,
+            &ns2,
+            &u1,
+            simple_doc("TRC-b", TRACE_OK, "@bob/other", "0.2.0"),
+        )
+        .await;
 
         // 只看自己的命名空间 → 只有自己那条。
         let o = TraceListOpts {
@@ -2007,10 +2103,13 @@ mod tests {
             o
         };
         assert_eq!(
-            list_traces(&p, &with(Box::new(|o| {
-                o.ref_ = "@alice/skill".into();
-                o.status = TRACE_ERROR.into();
-            })))
+            list_traces(
+                &p,
+                &with(Box::new(|o| {
+                    o.ref_ = "@alice/skill".into();
+                    o.status = TRACE_ERROR.into();
+                }))
+            )
             .await
             .unwrap()
             .1,
@@ -2024,14 +2123,20 @@ mod tests {
             2
         );
         assert_eq!(
-            list_traces(&p, &with(Box::new(|o| o.tag = "prod".into()))).await.unwrap().1,
-            3
-        );
-        assert_eq!(
-            list_traces(&p, &with(Box::new(|o| o.model = "openai/gpt-4o-mini".into())))
+            list_traces(&p, &with(Box::new(|o| o.tag = "prod".into())))
                 .await
                 .unwrap()
                 .1,
+            3
+        );
+        assert_eq!(
+            list_traces(
+                &p,
+                &with(Box::new(|o| o.model = "openai/gpt-4o-mini".into()))
+            )
+            .await
+            .unwrap()
+            .1,
             3
         );
         assert_eq!(
@@ -2042,24 +2147,36 @@ mod tests {
             3
         );
         assert_eq!(
-            list_traces(&p, &with(Box::new(|o| {
-                o.since = ncc_core::timeutil::parse_time("2026-09-26T10:01:00Z");
-            })))
+            list_traces(
+                &p,
+                &with(Box::new(|o| {
+                    o.since = ncc_core::timeutil::parse_time("2026-09-26T10:01:00Z");
+                }))
+            )
             .await
             .unwrap()
             .1,
             2
         );
         assert_eq!(
-            list_traces(&p, &with(Box::new(|o| o.only_unlabeled = true))).await.unwrap().1,
+            list_traces(&p, &with(Box::new(|o| o.only_unlabeled = true)))
+                .await
+                .unwrap()
+                .1,
             3
         );
         assert_eq!(
-            list_traces(&p, &with(Box::new(|o| o.failures_only = true))).await.unwrap().1,
+            list_traces(&p, &with(Box::new(|o| o.failures_only = true)))
+                .await
+                .unwrap()
+                .1,
             1
         );
         assert_eq!(
-            list_traces(&p, &with(Box::new(|o| o.q = "TRC-2".into()))).await.unwrap().1,
+            list_traces(&p, &with(Box::new(|o| o.q = "TRC-2".into())))
+                .await
+                .unwrap()
+                .1,
             1
         );
         // 倒序：最新的在前（at desc）
@@ -2069,7 +2186,10 @@ mod tests {
         // 导出：limit 截断必须**如实报**（悄悄少给几行，训练集就少一截）。
         let (rows, truncated) = export_traces(&p, &base, 2).await.unwrap();
         assert_eq!((rows.len(), truncated), (2, true));
-        assert!(!rows[0].doc.is_empty(), "导出必须带 Doc（否则数据集没有内容）");
+        assert!(
+            !rows[0].doc.is_empty(),
+            "导出必须带 Doc（否则数据集没有内容）"
+        );
         let (rows, truncated) = export_traces(&p, &base, 10).await.unwrap();
         assert_eq!((rows.len(), truncated), (3, false));
     }
@@ -2091,14 +2211,27 @@ mod tests {
             by: u.clone(),
             note: String::new(),
         };
-        add_trace_label(&p, add("grade", "pass", 0, false)).await.unwrap();
-        add_trace_label(&p, add("reward", "1", 1000, true)).await.unwrap();
-        add_trace_label(&p, add("score", "850", 850, true)).await.unwrap();
-        add_trace_label(&p, add("split", "eval", 0, false)).await.unwrap();
+        add_trace_label(&p, add("grade", "pass", 0, false))
+            .await
+            .unwrap();
+        add_trace_label(&p, add("reward", "1", 1000, true))
+            .await
+            .unwrap();
+        add_trace_label(&p, add("score", "850", 850, true))
+            .await
+            .unwrap();
+        add_trace_label(&p, add("split", "eval", 0, false))
+            .await
+            .unwrap();
 
         let got = get_trace(&p, &row.id).await.unwrap().unwrap();
         assert_eq!(
-            (got.eval_grade.as_str(), got.eval_reward, got.eval_score, got.eval_split.as_str()),
+            (
+                got.eval_grade.as_str(),
+                got.eval_reward,
+                got.eval_score,
+                got.eval_split.as_str()
+            ),
             ("pass", 1000, 850, "eval")
         );
         assert_eq!(got.label_count, 4);
@@ -2214,7 +2347,12 @@ mod tests {
         a.eval_score = 900;
         a.label_count = 1;
         a.eval_split = "eval".into();
-        let mut b = row("TR-2", TRACE_ERROR, "2026-09-26 10:01:00+00:00", r#"{"failure":"tool_timeout"}"#);
+        let mut b = row(
+            "TR-2",
+            TRACE_ERROR,
+            "2026-09-26 10:01:00+00:00",
+            r#"{"failure":"tool_timeout"}"#,
+        );
         b.duration_ms = 300;
         let mut c = row("TR-3", TRACE_OK, "2026-09-26 10:02:00+00:00", "");
         c.duration_ms = 200;
@@ -2231,7 +2369,10 @@ mod tests {
         assert_eq!(st.failures.get("tool_timeout"), Some(&1));
         assert_eq!(st.by_subject_version.get("@a/x@0.1.0"), Some(&2));
         assert_eq!(st.by_subject_version.get("@a/x@0.2.0"), Some(&1));
-        assert_eq!((st.duration_ms.min, st.duration_ms.p50, st.duration_ms.max), (100, 200, 300));
+        assert_eq!(
+            (st.duration_ms.min, st.duration_ms.p50, st.duration_ms.max),
+            (100, 200, 300)
+        );
         assert_eq!((st.input_tokens, st.cost_usd_micros), (30, 3000));
         assert_eq!(st.first_at, "2026-09-26T10:00:00Z");
         assert_eq!(st.last_at, "2026-09-26T10:02:00Z");
@@ -2250,12 +2391,16 @@ mod tests {
         .fetch_one(&p)
         .await
         .unwrap();
-        assert_eq!((kind.as_str(), append_only, status.as_str()), ("trace", 1, "active"));
-        let fields: String = sqlx::query_scalar("SELECT fields FROM collections WHERE namespace_id = ?")
-            .bind(&ns)
-            .fetch_one(&p)
-            .await
-            .unwrap();
+        assert_eq!(
+            (kind.as_str(), append_only, status.as_str()),
+            ("trace", 1, "active")
+        );
+        let fields: String =
+            sqlx::query_scalar("SELECT fields FROM collections WHERE namespace_id = ?")
+                .bind(&ns)
+                .fetch_one(&p)
+                .await
+                .unwrap();
         assert!(fields.contains("kind:enum:hur-run|agent"), "{fields}");
     }
 }

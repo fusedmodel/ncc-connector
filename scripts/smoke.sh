@@ -76,7 +76,7 @@ wait_http() {
 mkdir -p "${WORK}"
 
 say "0. 构建 + 启动两节点（master:${PORT_M} · worker:${PORT_W}）"
-( cd "${ROOT}" && go build -o "${TMP}/ncc-registry" ./cmd/ncc-registry )
+( cd "${ROOT}/rust" && cargo build --release -q --bin ncc-registry && cp target/release/ncc-registry "${TMP}/ncc-registry" )
 
 NCCR_PORT="${PORT_M}" NCCR_DATA_DIR="${TMP}/m" NCCR_NODE_NAME="smoke-master" \
   NCCR_NODE_REGION="测试-内网" \

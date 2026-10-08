@@ -62,7 +62,7 @@ jget() { python3 -c "import json,sys;d=json.load(sys.stdin);print(eval('d'+sys.a
 
 say "0. 构建并起节点（数据全在临时目录）"
 mkdir -p "${TMP}/bin"
-( cd "${ROOT}" && go build -o "${TMP}/bin/ncc-registry" ./cmd/ncc-registry )
+( cd "${ROOT}/rust" && cargo build --release -q --bin ncc-registry && cp target/release/ncc-registry "${TMP}/bin/ncc-registry" )
 "${TMP}/bin/ncc-registry" >"${TMP}/node.log" 2>&1 &
 PID=$!
 alive && good "节点就绪" || { bad "节点起不来（看 ${TMP}/node.log）"; exit 1; }

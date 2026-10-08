@@ -148,7 +148,10 @@ fn trace_json(r: &tr::TraceRow) -> Value {
     out.insert("id".into(), json!(r.id));
     out.insert("traceId".into(), json!(r.trace_id));
     out.insert("kind".into(), json!(r.kind));
-    out.insert("kindLabel".into(), json!(tr::trace_kind_label(&r.kind, "zh")));
+    out.insert(
+        "kindLabel".into(),
+        json!(tr::trace_kind_label(&r.kind, "zh")),
+    );
     out.insert("status".into(), json!(r.status));
     out.insert("at".into(), json!(time_or(r.at.as_str())));
     out.insert("durationMs".into(), json!(r.duration_ms));
@@ -164,7 +167,10 @@ fn trace_json(r: &tr::TraceRow) -> Value {
         json!({"id": r.owner_id, "name": r.owner_name.clone().unwrap_or_default()}),
     );
     out.insert("createdBy".into(), json!(r.created_by));
-    out.insert("createdAt".into(), json!(opt_time_or(r.created_at.as_deref())));
+    out.insert(
+        "createdAt".into(),
+        json!(opt_time_or(r.created_at.as_deref())),
+    );
     if !r.subject_ref.is_empty() || !r.subject_version.is_empty() {
         out.insert(
             "subject".into(),
@@ -387,11 +393,7 @@ impl TraceReject {
 ///
 /// 幂等：同 (命名空间, traceId) 重复上报是**正常现象**（网络重试、离线补报），
 /// 摘要一致就当已收下（duplicates++），摘要不同才拒（trace_conflict）。
-async fn ingest(
-    State(state): State<AppState>,
-    auth: Auth,
-    body: Bytes,
-) -> ApiResult<Response> {
+async fn ingest(State(state): State<AppState>, auth: Auth, body: Bytes) -> ApiResult<Response> {
     let a = require_scope(&auth, "trace:write")?;
     let req: Value = serde_json::from_slice(&body)
         .map_err(|e| ApiError::bad_request("bad_json", format!("请求体不是合法 JSON: {e}")))?;
@@ -458,21 +460,19 @@ async fn ingest(
         };
         let issues = tr::validate_trace(&parsed.value);
         if tr::trace_has_error(&issues) {
-            rej.push(TraceReject::new(
-                i,
-                &parsed.id,
-                "trace_invalid",
-                "",
-                issues,
-            ));
+            rej.push(TraceReject::new(i, &parsed.id, "trace_invalid", "", issues));
             continue;
         }
         match tr::insert_trace(state.pool(), &ns.id, &a.user_id, &parsed).await {
             Ok(tr::TraceInsertOutcome::Created(row)) => acc.push(row),
             Ok(tr::TraceInsertOutcome::Duplicate(_)) => dups += 1,
-            Err(tr::TraceWriteError::Conflict(m)) => {
-                rej.push(TraceReject::new(i, &parsed.id, "trace_conflict", &m, vec![]))
-            }
+            Err(tr::TraceWriteError::Conflict(m)) => rej.push(TraceReject::new(
+                i,
+                &parsed.id,
+                "trace_conflict",
+                &m,
+                vec![],
+            )),
             Err(e) => rej.push(TraceReject::new(
                 i,
                 &parsed.id,
@@ -607,8 +607,8 @@ async fn get_one(
         ));
     }
     // 库里的文档坏了也要如实回（而不是 500）：轨迹是证据，坏了比不显示更容易被发现。
-    let doc = serde_json::from_str::<Value>(&row.doc)
-        .unwrap_or_else(|_| Value::String(row.doc.clone()));
+    let doc =
+        serde_json::from_str::<Value>(&row.doc).unwrap_or_else(|_| Value::String(row.doc.clone()));
     let labels = store::traces::list_trace_labels(state.pool(), &row.id)
         .await
         .unwrap_or_default();
@@ -881,7 +881,9 @@ async fn export(
     if web::query(&uri, "format").as_deref() == Some("json")
         || web::query(&uri, "manifest").as_deref() == Some("1")
     {
-        return Ok(helpers::ok_json(json!({"manifest": manifest, "rows": docs})));
+        return Ok(helpers::ok_json(
+            json!({"manifest": manifest, "rows": docs}),
+        ));
     }
 
     // 默认 JSONL：训练管线直接吃。
@@ -921,17 +923,22 @@ mod tests {
     }
 
     async fn state(name: &str) -> AppState {
-        let dir = std::env::temp_dir().join(format!("ncc-http-traces-{}-{name}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("ncc-http-traces-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let pool = ncc_core::pool::open_sqlite(&dir.join("t.db")).await.unwrap();
-        ncc_core::pool::migrate(&pool, crate::schema::DDL).await.unwrap();
+        let pool = ncc_core::pool::open_sqlite(&dir.join("t.db"))
+            .await
+            .unwrap();
+        ncc_core::pool::migrate(&pool, crate::schema::DDL)
+            .await
+            .unwrap();
         let mut cfg = crate::config::load().expect("默认配置可加载");
         cfg.public_url = "http://localhost:8282".to_string();
         cfg.jwt_secret = "test-secret".to_string();
         cfg.blob_dir = test_dir(name);
-        let blobs = ncc_core::storage::LocalStorage::new(&cfg.blob_dir, &cfg.public_url, "blobs")
-            .unwrap();
+        let blobs =
+            ncc_core::storage::LocalStorage::new(&cfg.blob_dir, &cfg.public_url, "blobs").unwrap();
         let seal = ncc_core::secretbox::SecretBox::new(&cfg.jwt_secret).unwrap();
         AppState {
             cfg: std::sync::Arc::new(cfg),
@@ -967,7 +974,9 @@ mod tests {
     async fn call(app: &Router, req: Request<Body>) -> (StatusCode, Value) {
         let resp = app.clone().oneshot(req).await.unwrap();
         let status = resp.status();
-        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 22).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 22)
+            .await
+            .unwrap();
         let v = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         (status, v)
     }
@@ -976,7 +985,9 @@ mod tests {
         let resp = app.clone().oneshot(req).await.unwrap();
         let status = resp.status();
         let headers = resp.headers().clone();
-        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 22).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 22)
+            .await
+            .unwrap();
         (status, headers, String::from_utf8_lossy(&bytes).to_string())
     }
 
@@ -1045,7 +1056,10 @@ mod tests {
             let (code, v) = call(&app, get_req(path, "")).await;
             assert_eq!(code, StatusCode::UNAUTHORIZED, "{path} {v}");
             assert_eq!(v["error"]["code"], "unauthorized");
-            assert_eq!(v["error"]["message"], "未认证或凭据无效（先 ncc login 或带 API-Key）");
+            assert_eq!(
+                v["error"]["message"],
+                "未认证或凭据无效（先 ncc login 或带 API-Key）"
+            );
         }
     }
 
@@ -1065,7 +1079,10 @@ mod tests {
         assert_eq!(v["splits"][2], "holdout");
         assert_eq!(v["labelKeys"][0]["key"], "grade");
         assert_eq!(v["labelKeys"][0]["zh"], "结论");
-        assert_eq!(v["labelKeys"][0]["descZh"], "人工/模型给的结论：pass | fail | partial");
+        assert_eq!(
+            v["labelKeys"][0]["descZh"],
+            "人工/模型给的结论：pass | fail | partial"
+        );
         assert_eq!(v["limits"]["batchMax"], 500);
         assert_eq!(v["limits"]["exportLimit"], 20000);
         assert_eq!(v["limits"]["maxSteps"], 2000);
@@ -1075,7 +1092,8 @@ mod tests {
     #[tokio::test]
     async fn 采集_列表_详情_标注_聚合_导出_删除() {
         let st = state("flow").await;
-        let (_u, _ns, token) = seed(&st, "alice", &["trace:read", "trace:write", "trace:label"]).await;
+        let (_u, _ns, token) =
+            seed(&st, "alice", &["trace:read", "trace:write", "trace:label"]).await;
         let app = app(&st);
 
         // 批量上报：一条收下
@@ -1093,7 +1111,10 @@ mod tests {
         // 重传：同 id 同摘要 → duplicates（网络重试是常态）
         let (code, v) = call(&app, json_req("POST", "/traces/", &token, body)).await;
         assert_eq!(code, StatusCode::CREATED);
-        assert_eq!((v["accepted"].as_i64(), v["duplicates"].as_i64()), (Some(0), Some(1)));
+        assert_eq!(
+            (v["accepted"].as_i64(), v["duplicates"].as_i64()),
+            (Some(0), Some(1))
+        );
 
         // 同 id 不同内容 → 拒（而且是 trace_conflict）
         let (code, v) = call(
@@ -1181,7 +1202,12 @@ mod tests {
         {
             let (code, v) = call(
                 &app,
-                json_req("POST", &format!("/traces/{row_id}/labels"), &token, body.clone()),
+                json_req(
+                    "POST",
+                    &format!("/traces/{row_id}/labels"),
+                    &token,
+                    body.clone(),
+                ),
             )
             .await;
             assert_eq!(code, StatusCode::CREATED, "{v}");
@@ -1266,9 +1292,15 @@ mod tests {
         // 导出（默认 JSONL）
         let (code, headers, body) = call_raw(&app, get_req("/traces/export", &token)).await;
         assert_eq!(code, StatusCode::OK);
-        assert_eq!(headers["content-type"].to_str().unwrap(), "application/x-ndjson; charset=utf-8");
+        assert_eq!(
+            headers["content-type"].to_str().unwrap(),
+            "application/x-ndjson; charset=utf-8"
+        );
         assert_eq!(headers["x-ncc-trace-count"].to_str().unwrap(), "2");
-        let digest = headers["x-ncc-dataset-digest"].to_str().unwrap().to_string();
+        let digest = headers["x-ncc-dataset-digest"]
+            .to_str()
+            .unwrap()
+            .to_string();
         assert!(digest.starts_with("sha256:"), "{digest}");
         assert_eq!(digest.len(), "sha256:".len() + 64);
         assert!(headers.get("x-ncc-truncated").is_none());
@@ -1283,7 +1315,10 @@ mod tests {
         assert_eq!(rows[1]["meta"]["traceId"], "TRC-1");
         assert_eq!(rows[0]["spec"], "ncc-trace-dataset/v1");
         assert_eq!(rows[1]["trace"]["id"], "TRC-1");
-        assert!(rows[0].get("evaluation").is_none(), "没标注的轨迹不带 evaluation");
+        assert!(
+            rows[0].get("evaluation").is_none(),
+            "没标注的轨迹不带 evaluation"
+        );
         assert_eq!(rows[1]["evaluation"][0]["key"], "grade");
         // 摘要就是这批字节的 sha256（可核对）
         assert_eq!(
@@ -1292,7 +1327,11 @@ mod tests {
         );
 
         // 导出（manifest=1 → JSON）
-        let (code, v) = call(&app, get_req("/traces/export?manifest=1&ref=@alice/skill", &token)).await;
+        let (code, v) = call(
+            &app,
+            get_req("/traces/export?manifest=1&ref=@alice/skill", &token),
+        )
+        .await;
         assert_eq!(code, StatusCode::OK);
         assert_eq!(v["manifest"]["spec"], "ncc-trace-dataset/v1");
         assert_eq!(v["manifest"]["count"], 2);
@@ -1344,7 +1383,12 @@ mod tests {
         let app = app(&st);
         let (code, v) = call(
             &app,
-            json_req("POST", "/traces", &token, json!({"traces": [doc("TRC-1", "ok", "2026-09-26T10:00:00Z")]})),
+            json_req(
+                "POST",
+                "/traces",
+                &token,
+                json!({"traces": [doc("TRC-1", "ok", "2026-09-26T10:00:00Z")]}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::CREATED, "{v}");
@@ -1360,7 +1404,12 @@ mod tests {
         // 标注要 trace:label（写权不含它）
         let (code, v) = call(
             &app,
-            json_req("POST", &format!("/traces/{row_id}/labels"), &token, json!({"key": "grade", "value": "pass"})),
+            json_req(
+                "POST",
+                &format!("/traces/{row_id}/labels"),
+                &token,
+                json!({"key": "grade", "value": "pass"}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::FORBIDDEN);
@@ -1372,7 +1421,12 @@ mod tests {
         assert_eq!(code, StatusCode::OK);
         let (code, v) = call(
             &app,
-            json_req("POST", "/traces", &ro, json!({"traces": [doc("TRC-X", "ok", "2026-09-26T10:00:00Z")]})),
+            json_req(
+                "POST",
+                "/traces",
+                &ro,
+                json!({"traces": [doc("TRC-X", "ok", "2026-09-26T10:00:00Z")]}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::FORBIDDEN);
@@ -1382,12 +1436,18 @@ mod tests {
     #[tokio::test]
     async fn 可见性_跨人看不到_管理员要显式all() {
         let st = state("visibility").await;
-        let (u1, _ns1, t1) = seed(&st, "alice", &["trace:read", "trace:write", "trace:label"]).await;
+        let (u1, _ns1, t1) =
+            seed(&st, "alice", &["trace:read", "trace:write", "trace:label"]).await;
         let (_u2, _ns2, t2) = seed(&st, "bob", &["trace:read", "trace:write", "trace:label"]).await;
         let app = app(&st);
         let (code, v) = call(
             &app,
-            json_req("POST", "/traces", &t1, json!({"traces": [doc("TRC-a", "ok", "2026-09-26T10:00:00Z")]})),
+            json_req(
+                "POST",
+                "/traces",
+                &t1,
+                json!({"traces": [doc("TRC-a", "ok", "2026-09-26T10:00:00Z")]}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::CREATED, "{v}");
@@ -1399,10 +1459,18 @@ mod tests {
         assert_eq!(v["total"], 0);
         let (code, v) = call(&app, get_req(&format!("/traces/{row_id}"), &t2)).await;
         assert_eq!(code, StatusCode::FORBIDDEN);
-        assert!(v["error"]["message"].as_str().unwrap().contains("这条轨迹不在你可见的范围内"));
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("这条轨迹不在你可见的范围内"));
         let (code, v) = call(
             &app,
-            json_req("POST", &format!("/traces/{row_id}/labels"), &t2, json!({"key": "grade", "value": "fail"})),
+            json_req(
+                "POST",
+                &format!("/traces/{row_id}/labels"),
+                &t2,
+                json!({"key": "grade", "value": "fail"}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::FORBIDDEN);
@@ -1446,10 +1514,11 @@ mod tests {
         assert_eq!(v["scope"], "visible");
 
         // 被授权者：bob 拿到 alice 的 trace 授权后可见
-        let owner: String = sqlx::query_scalar("SELECT owner_id FROM namespaces WHERE slug = 'alice'")
-            .fetch_one(st.pool())
-            .await
-            .unwrap();
+        let owner: String =
+            sqlx::query_scalar("SELECT owner_id FROM namespaces WHERE slug = 'alice'")
+                .fetch_one(st.pool())
+                .await
+                .unwrap();
         store::grants::create(st.pool(), &owner, &_u2.id, tr::KIND_TRACE, "", "")
             .await
             .unwrap();
@@ -1487,12 +1556,19 @@ mod tests {
         .await;
         assert_eq!(code, StatusCode::BAD_REQUEST);
         assert_eq!(v["error"]["code"], "bad_json");
-        assert!(v["error"]["message"].as_str().unwrap().starts_with("请求体不是合法 JSON"));
+        assert!(v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("请求体不是合法 JSON"));
         // 超批：一次最多 500 条
         let many: Vec<Value> = (0..501)
             .map(|i| doc(&format!("TRC-{i}"), "ok", "2026-09-26T10:00:00Z"))
             .collect();
-        let (code, v) = call(&app, json_req("POST", "/traces", &token, json!({"traces": many}))).await;
+        let (code, v) = call(
+            &app,
+            json_req("POST", "/traces", &token, json!({"traces": many})),
+        )
+        .await;
         assert_eq!(code, StatusCode::PAYLOAD_TOO_LARGE);
         assert_eq!(v["error"]["code"], "batch_too_large");
         assert_eq!(v["error"]["message"], "一次最多上报 500 条，收到 501 条");
@@ -1524,7 +1600,10 @@ mod tests {
             .contains("kind 必须是 hur-run|agent"));
         assert_eq!(v["rejects"][1]["code"], "bad_json");
         assert!(v["rejects"][1].get("id").is_none(), "解析失败的没有 id");
-        assert!(v["rejects"][1]["msg"].as_str().unwrap().starts_with("不是一份轨迹文档"));
+        assert!(v["rejects"][1]["msg"]
+            .as_str()
+            .unwrap()
+            .starts_with("不是一份轨迹文档"));
         assert_eq!(v["refs"][0]["traceId"], "TRC-good");
 
         // 全被拒 → 400，code 取唯一的那个（跟 Go 一样）
@@ -1538,7 +1617,16 @@ mod tests {
         assert_eq!(v["error"]["message"], "全部被拒：见 rejects");
 
         // 单条形态：整个 body 就是一份文档
-        let (code, v) = call(&app, json_req("POST", "/traces", &token, doc("TRC-single", "ok", "2026-09-26T10:00:00Z"))).await;
+        let (code, v) = call(
+            &app,
+            json_req(
+                "POST",
+                "/traces",
+                &token,
+                doc("TRC-single", "ok", "2026-09-26T10:00:00Z"),
+            ),
+        )
+        .await;
         assert_eq!(code, StatusCode::CREATED, "{v}");
         assert_eq!(v["accepted"], 1);
         assert_eq!(v["refs"][0]["traceId"], "TRC-single");
@@ -1555,7 +1643,10 @@ mod tests {
         )
         .await;
         assert_eq!(code, StatusCode::FORBIDDEN);
-        assert_eq!(v["error"]["message"], "你不是命名空间 @other 的成员，不能把轨迹写进去");
+        assert_eq!(
+            v["error"]["message"],
+            "你不是命名空间 @other 的成员，不能把轨迹写进去"
+        );
         // 显式给自己的空间（带 @）
         let (code, v) = call(
             &app,
@@ -1570,11 +1661,12 @@ mod tests {
         assert_eq!(code, StatusCode::CREATED, "{v}");
         assert_eq!(v["namespace"]["slug"], "alice");
         // 取用即声明：采集过的命名空间里有内置 trace 集合
-        let kind: String = sqlx::query_scalar("SELECT kind FROM collections WHERE namespace_id = ?")
-            .bind(&ns.id)
-            .fetch_one(st.pool())
-            .await
-            .unwrap();
+        let kind: String =
+            sqlx::query_scalar("SELECT kind FROM collections WHERE namespace_id = ?")
+                .bind(&ns.id)
+                .fetch_one(st.pool())
+                .await
+                .unwrap();
         assert_eq!(kind, "trace");
     }
 
@@ -1585,24 +1677,36 @@ mod tests {
         let app = app(&st);
         let (code, v) = call(
             &app,
-            json_req("POST", "/traces", &token, json!({"traces": [doc("TRC-1", "ok", "2026-09-26T10:00:00Z")]})),
+            json_req(
+                "POST",
+                "/traces",
+                &token,
+                json!({"traces": [doc("TRC-1", "ok", "2026-09-26T10:00:00Z")]}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::CREATED, "{v}");
         let row_id = v["refs"][0]["id"].as_str().unwrap().to_string();
-        let post = |body: Value| json_req("POST", &format!("/traces/{row_id}/labels"), &token, body);
+        let post =
+            |body: Value| json_req("POST", &format!("/traces/{row_id}/labels"), &token, body);
 
         let (code, v) = call(&app, post(json!({"value": "x"}))).await;
         assert_eq!(code, StatusCode::BAD_REQUEST);
         assert_eq!(v["error"]["code"], "bad_key");
-        assert_eq!(v["error"]["message"], "缺 key（常用键见 GET /api/traces/kinds）");
+        assert_eq!(
+            v["error"]["message"],
+            "缺 key（常用键见 GET /api/traces/kinds）"
+        );
         let (code, v) = call(&app, post(json!({"key": "k".repeat(65)}))).await;
         assert_eq!(code, StatusCode::BAD_REQUEST);
         assert_eq!(v["error"]["message"], "key 太长（≤64）");
         let (code, v) = call(&app, post(json!({"score": 1001}))).await;
         assert_eq!(code, StatusCode::BAD_REQUEST);
         assert_eq!(v["error"]["code"], "bad_score");
-        assert_eq!(v["error"]["message"], "score 要在 -1..1 之间（千分位：-1000..1000）");
+        assert_eq!(
+            v["error"]["message"],
+            "score 要在 -1..1 之间（千分位：-1000..1000）"
+        );
         let (code, v) = call(
             &app,
             Request::builder()
@@ -1623,7 +1727,12 @@ mod tests {
         // 不存在的轨迹 → 404（文案与 Go 一致）
         let (code, v) = call(
             &app,
-            json_req("POST", "/traces/NOPE/labels", &token, json!({"key": "grade", "value": "pass"})),
+            json_req(
+                "POST",
+                "/traces/NOPE/labels",
+                &token,
+                json!({"key": "grade", "value": "pass"}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::NOT_FOUND);
@@ -1635,7 +1744,9 @@ mod tests {
         assert!(parse_trace_time("").is_none());
         assert!(parse_trace_time("不是时间").is_none());
         assert_eq!(
-            parse_trace_time("2026-09-26T10:00:00Z").unwrap().to_rfc3339(),
+            parse_trace_time("2026-09-26T10:00:00Z")
+                .unwrap()
+                .to_rfc3339(),
             "2026-09-26T10:00:00+00:00"
         );
         assert!(parse_trace_time("2026-09-26").is_some());

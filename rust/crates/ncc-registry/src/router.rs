@@ -45,7 +45,7 @@ pub fn build(state: &AppState) -> Router {
 
     let api = api_router()
         .route("/health", axum::routing::get(health))
-        .route("/meta", axum::routing::get(meta))
+        .route("/meta", axum::routing::get(httpapi::meta::meta))
         .fallback(ncc_core::error::fallback_not_migrated);
 
     // 上传端点要能吃大包（制品字节最大 256MB）；默认 body 上限只有 2MB。
@@ -64,7 +64,22 @@ pub fn build(state: &AppState) -> Router {
     // 就指向一个不存在的目录，而且会随构建环境变化 —— 部署里没有比这更难查的事。
     if cfg.console && cfg.console_dir.is_dir() {
         tracing::info!("控制台   {} → /", cfg.console_dir.display());
-        app = app.nest_service("/", ServeDir::new(&cfg.console_dir));
+        // ⚠️ 必须用 `fallback_service`：axum 0.8 对 `nest_service("/")` 直接 panic
+        // （"Nesting at the root is no longer supported"）—— 而且是在**真实进程启动时**
+        // 才炸，只建 router 的单测（控制台目录不存在时不挂）碰不到这条路径。
+        // `/console` 是给人念的地址（Go 那边 302 跳到控制台根）：状态码照抄 302，
+        // 不换成 301/307 —— 控制台可能换部署位置，缓存一个永久跳转会让人莫名其妙。
+        app = app
+            .route(
+                "/console",
+                axum::routing::get(|| async {
+                    (
+                        axum::http::StatusCode::FOUND,
+                        [(axum::http::header::LOCATION, "/")],
+                    )
+                }),
+            )
+            .fallback_service(ServeDir::new(&cfg.console_dir));
     }
 
     app
@@ -85,34 +100,5 @@ async fn health(
         "artifacts": artifacts,
         "nodes": nodes,
         "users": users,
-    })))
-}
-
-/// GET /api/meta —— 本节点身份与规模。
-async fn meta(
-    axum::extract::State(state): axum::extract::State<AppState>,
-) -> Result<axum::response::Response, ncc_core::error::ApiError> {
-    let cfg = state.cfg();
-    let (artifacts, nodes, users) = httpapi::helpers::counts(&state).await;
-    Ok(httpapi::helpers::ok_json(serde_json::json!({
-        "service": "ncc-registry",
-        "version": ncc_core::REGISTRY_VERSION,
-        "publicUrl": cfg.public_url,
-        "node": {
-            "id": cfg.node_id,
-            "name": cfg.node_name,
-            "role": cfg.role,
-            "version": ncc_core::REGISTRY_VERSION,
-            "region": cfg.node_region,
-            "artifacts": artifacts,
-            "nodes": nodes,
-            "users": users,
-            "online": true,
-        },
-        "cluster": {
-            "role": cfg.role,
-            "masterUrl": cfg.master_url,
-            "nodeTtlSeconds": cfg.node_ttl.as_secs(),
-        },
     })))
 }

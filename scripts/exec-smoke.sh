@@ -92,7 +92,7 @@ exit 0
 STUB
 chmod +x "${TMP}/fake-ncc"
 
-( cd "${ROOT}" && go build -o "${TMP}/ncc-registry" ./cmd/ncc-registry )
+( cd "${ROOT}/rust" && cargo build --release -q --bin ncc-registry && cp target/release/ncc-registry "${TMP}/ncc-registry" )
 NCCR_PORT="${PORT}" NCCR_DATA_DIR="${TMP}/data" NCCR_BLOB_DIR="${TMP}/blobs" \
 NCCR_DB_PATH="${TMP}/db/nccr.sqlite" NCCR_NODE_NAME="cloud-1" NCCR_NODE_REGION="机房A" \
 NCCR_PUBLIC_URL="${BASE}" NCCR_P2P_STUN="127.0.0.1:9" \

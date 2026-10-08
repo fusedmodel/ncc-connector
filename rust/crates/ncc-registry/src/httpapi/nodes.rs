@@ -17,6 +17,95 @@ use ncc_core::web;
 use crate::httpapi::{AppState, Auth};
 use crate::store;
 
+/// `GET /api/nodes/route?ref=@命名空间/slug` —— 「这个能力该找谁」。
+///
+/// 原实现：`httpapi/cluster.go` 的 `clusterRoute`。master 先看自己有没有，再看哪个 worker
+/// 上报过这条（`artifact_adverts`）；`preferred` 是给客户端的一个地址，字节可以由 master
+/// 代理回来（`/api/registry/{ref}/bytes`），所以调用方不必自己去连 worker。
+///
+/// 注意这条路由**放在 `{id}` 之前**：axum 里静态段优先，但顺序无关紧要 —— 写前面只是让人
+/// 一眼看到「route 不是节点 id」。
+async fn route_ref(State(state): State<AppState>, uri: axum::http::Uri) -> ApiResult<Response> {
+    let cfg = state.cfg();
+    let ref_ = query_param(&uri, "ref").unwrap_or_default();
+    if ref_.trim().is_empty() {
+        return Err(ApiError::bad_request(
+            "bad_request",
+            "需要 ref（@命名空间/slug 或 A-… id）",
+        ));
+    }
+    let ref_ = ref_.trim().to_string();
+    let mut candidates: Vec<serde_json::Value> = Vec::new();
+
+    // 自己（master）有：只有「已发布 + 公开」才算可路由
+    if let Some(row) = store::artifacts::by_ref(state.pool(), &ref_)
+        .await
+        .map_err(ApiError::from_db)?
+    {
+        if row.status == "published" && row.visibility == "public" {
+            candidates.push(json!({
+                "role": "self",
+                "nodeId": cfg.node_id,
+                "nodeName": cfg.node_name,
+                "nodeUrl": cfg.public_url,
+                "ref": format!("{}@{}", row.ref_of(), row.version),
+                "sha256": row.sha256,
+                "size": row.size,
+                "download": format!("{}/api/registry/{}/bytes", cfg.public_url, row.ref_of()),
+            }));
+        }
+    }
+
+    // worker 上报的目录（兜底：worker 直接托管但 master 没有副本时也能路由到）
+    let adverts = store::cluster::find_adverts_by_ref(state.pool(), &ref_)
+        .await
+        .map_err(ApiError::from_db)?;
+    for a in &adverts {
+        let url = a.worker_url.clone().unwrap_or_default();
+        candidates.push(json!({
+            "role": "worker",
+            "nodeId": a.worker_id,
+            "nodeName": a.worker_name.clone().unwrap_or_default(),
+            "nodeUrl": url,
+            "ref": a.ref_,
+            "sha256": a.sha256,
+            "size": a.size,
+            "download": format!("{}/api/registry/{}/bytes", url.trim_end_matches('/'), a.ref_),
+            // 在线由心跳时间现场算（与 Go 的 nodeOnline(a.SeenAt, NodeTTL*4) 同口径）
+            "online": a.online(cfg.node_ttl * 4),
+        }));
+    }
+
+    let resolved = !candidates.is_empty();
+    // `preferred`：优先本节点，其次心跳最新的 worker（adverts 已按 seen_at 倒序）
+    let preferred = candidates
+        .iter()
+        .find(|c| c["role"] == "self")
+        .or_else(|| candidates.first())
+        .cloned();
+    let mut out = json!({
+        "ref": ref_,
+        "resolved": resolved,
+        "candidates": candidates,
+        "count": candidates.len(),
+        "role": cfg.role,
+    });
+    if let Some(p) = preferred {
+        out["preferred"] = p;
+        out["download"] = json!(format!("{}/api/registry/{}/bytes", cfg.public_url, ref_));
+    }
+    Ok(crate::httpapi::helpers::ok_json(out))
+}
+
+/// 取一个查询参数（值做一次百分号解码）。
+fn query_param(uri: &axum::http::Uri, key: &str) -> Option<String> {
+    let q = uri.query()?;
+    q.split('&').find_map(|kv| {
+        let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+        (k == key).then(|| web::percent_decode(v))
+    })
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/nodes", get(list_nodes))
@@ -28,6 +117,7 @@ pub fn routes() -> Router<AppState> {
         .route("/nodes/heartbeat", post(heartbeat))
         .route("/nodes/links", post(link_node))
         .route("/nodes/links/{id}", patch(patch_link).delete(delete_link))
+        .route("/nodes/route", get(route_ref))
         .route("/nodes/{id}", delete(delete_node))
         .route("/grants", get(list_grants).post(create_grant))
         .route("/grants/{id}", delete(delete_grant))
@@ -76,7 +166,11 @@ async fn my_ns_ids(state: &AppState, user_id: &str) -> Result<Vec<String>, ApiEr
 }
 
 /// GET /api/nodes?mine=1 —— `mine=1` 是我命名空间下的节点，否则是我连接表里的节点。
-async fn list_nodes(State(state): State<AppState>, auth: Auth, uri: axum::http::Uri) -> ApiResult<Response> {
+async fn list_nodes(
+    State(state): State<AppState>,
+    auth: Auth,
+    uri: axum::http::Uri,
+) -> ApiResult<Response> {
     let mine = web::query_bool(&uri, "mine");
     let ttl = state.cfg().node_ttl;
     let rows = if mine {
@@ -114,7 +208,9 @@ async fn node_kinds(State(state): State<AppState>) -> ApiResult<Response> {
         json!({"kind": k, "label": label, "desc": desc, "count": counts.get(*k).copied().unwrap_or(0)})
     })
     .collect::<Vec<_>>();
-    Ok(ncc_core::error::ok(json!({"kinds": list, "total": list.len()})))
+    Ok(ncc_core::error::ok(
+        json!({"kinds": list, "total": list.len()}),
+    ))
 }
 
 /// GET /api/nodes/offers —— 本实例上出现过的提供能力词表。
@@ -139,7 +235,11 @@ async fn node_offers(State(state): State<AppState>) -> ApiResult<Response> {
 }
 
 /// GET /api/nodes/discover?kind&region&q&can&limit
-async fn discover(State(state): State<AppState>, auth: Auth, uri: axum::http::Uri) -> ApiResult<Response> {
+async fn discover(
+    State(state): State<AppState>,
+    auth: Auth,
+    uri: axum::http::Uri,
+) -> ApiResult<Response> {
     let uid = auth.user_id().unwrap_or_default();
     let granted = if uid.is_empty() {
         Vec::new()
@@ -161,7 +261,10 @@ async fn discover(State(state): State<AppState>, auth: Auth, uri: axum::http::Ur
 
     // 按能力筛选：`?can=serve:mcp` 看声明，`?can=run:remote@verified` 看自证。
     let mut wanted: Vec<(String, bool)> = Vec::new();
-    for raw in web::query(&uri, "can").into_iter().flat_map(|s| web::split_csv(&s)) {
+    for raw in web::query(&uri, "can")
+        .into_iter()
+        .flat_map(|s| web::split_csv(&s))
+    {
         match raw.strip_suffix("@verified") {
             Some(c) => wanted.push((c.to_string(), true)),
             None => wanted.push((raw, false)),
@@ -224,7 +327,11 @@ async fn heartbeat(
         .await
         .map_err(ApiError::from_db)?;
     Ok(ncc_core::error::ok_status(
-        if created { StatusCode::CREATED } else { StatusCode::OK },
+        if created {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        },
         json!({"node": node_json(&node, ttl), "created": created}),
     ))
 }
@@ -406,7 +513,8 @@ async fn create_grant(
 
     // 命名空间授权要先证明你是那个命名空间的人
     let ns_id = body.namespace_id.trim();
-    if !ns_id.is_empty() && !crate::httpapi::artifacts::can_manage(&state, ns_id, &a.user_id).await {
+    if !ns_id.is_empty() && !crate::httpapi::artifacts::can_manage(&state, ns_id, &a.user_id).await
+    {
         return Err(ApiError::forbidden("你不是该 namespace 的 owner/成员"));
     }
 

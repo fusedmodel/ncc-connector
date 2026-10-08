@@ -85,11 +85,7 @@ struct P2PCheckReq {
 }
 
 /// POST /api/p2p/check {peer, waitSec} —— 与一个已知映射地址做真实对打。
-async fn p2p_check(
-    State(state): State<AppState>,
-    auth: Auth,
-    body: Bytes,
-) -> ApiResult<Response> {
+async fn p2p_check(State(state): State<AppState>, auth: Auth, body: Bytes) -> ApiResult<Response> {
     auth.require_scope("p2p:write")?;
     ensure_auto_serve(&state).await;
     let body: P2PCheckReq = parse_body(&body)?;
@@ -159,8 +155,8 @@ async fn p2p_serve_set(
     body: Bytes,
 ) -> ApiResult<Response> {
     auth.require_scope("p2p:write")?;
-    let body: ServeReq = parse_body(&body)
-        .map_err(|_| ApiError::bad_request("bad_request", SERVE_HINT))?;
+    let body: ServeReq =
+        parse_body(&body).map_err(|_| ApiError::bad_request("bad_request", SERVE_HINT))?;
     let Some(on) = body.on else {
         return Err(ApiError::bad_request("bad_request", SERVE_HINT));
     };
@@ -181,7 +177,11 @@ async fn p2p_serve_set(
         if slot.is_none() {
             match Responder::start(&stun_servers(&state), Duration::from_secs(3)).await {
                 Ok(r) => {
-                    tracing::info!("p2p.serve 已开启 listen={} mapped={}", r.addr(), r.mapped_addr());
+                    tracing::info!(
+                        "p2p.serve 已开启 listen={} mapped={}",
+                        r.addr(),
+                        r.mapped_addr()
+                    );
                     *slot = Some(Arc::new(r));
                 }
                 Err(e) => {
@@ -254,7 +254,11 @@ async fn ensure_auto_serve(state: &AppState) {
     }
     match Responder::start(&stun_servers(state), Duration::from_secs(3)).await {
         Ok(r) => {
-            tracing::info!("p2p.serve 随服务开启 listen={} mapped={}", r.addr(), r.mapped_addr());
+            tracing::info!(
+                "p2p.serve 随服务开启 listen={} mapped={}",
+                r.addr(),
+                r.mapped_addr()
+            );
             *slot = Some(Arc::new(r));
         }
         Err(e) => {
@@ -372,7 +376,11 @@ fn binding_success(txid: &[u8], observed: &SocketAddr) -> Option<Vec<u8>> {
     for (i, o) in v4.ip().octets().iter().enumerate() {
         val.push(o ^ m[i]);
     }
-    Some(build_message(BINDING_OK, txid, &attr(ATTR_XOR_MAPPED, &val)))
+    Some(build_message(
+        BINDING_OK,
+        txid,
+        &attr(ATTR_XOR_MAPPED, &val),
+    ))
 }
 
 fn parse_attrs(msg: &[u8]) -> Vec<(u16, Vec<u8>)> {
@@ -539,7 +547,9 @@ fn host_addr_kind(ip: Ipv4Addr) -> &'static str {
     let o = ip.octets();
     if o[0] == 100 && (64..=127).contains(&o[1]) {
         "cgnat"
-    } else if o[0] == 10 || (o[0] == 192 && o[1] == 168) || (o[0] == 172 && (16..=31).contains(&o[1]))
+    } else if o[0] == 10
+        || (o[0] == 192 && o[1] == 168)
+        || (o[0] == 172 && (16..=31).contains(&o[1]))
     {
         "private"
     } else {
@@ -665,9 +675,10 @@ pub async fn probe(servers: &[String], timeout: Duration) -> Profile {
         }
         _ if prof.mapping_behavior == "address_and_port_dependent" => {
             prof.verdict = "relay_likely".to_string();
-            prof.advice = "对称 NAT：只有对端是锥形且由对端发起时有机会；两端都对称基本只能 relay。\
+            prof.advice =
+                "对称 NAT：只有对端是锥形且由对端发起时有机会；两端都对称基本只能 relay。\
                            请配 NCCR_P2P_TURN（客户自托管）。"
-                .to_string();
+                    .to_string();
         }
         _ if prof.mapping_behavior == "address_dependent" => {
             prof.verdict = "likely_direct".to_string();
@@ -684,7 +695,9 @@ pub async fn probe(servers: &[String], timeout: Duration) -> Profile {
                 "address_and_port_dependent" => advice.push_str("、地址端口相关过滤"),
                 _ => {}
             }
-            advice.push_str("）：与同为锥形的对端几乎必成；对方对称时需你主动先发。用 check 实测确认。");
+            advice.push_str(
+                "）：与同为锥形的对端几乎必成；对方对称时需你主动先发。用 check 实测确认。",
+            );
             prof.advice = advice;
         }
     }
@@ -727,10 +740,16 @@ async fn rfc5780(
         }
     };
     // 过滤：能收到来自另一个地址的响应 = 端点无关过滤。
-    if exchange(sock, primary, CHANGE_IP_PORT, true, timeout).await.is_some() {
+    if exchange(sock, primary, CHANGE_IP_PORT, true, timeout)
+        .await
+        .is_some()
+    {
         return Some((mapping, "endpoint_independent".to_string()));
     }
-    if exchange(sock, primary, CHANGE_PORT, true, timeout).await.is_some() {
+    if exchange(sock, primary, CHANGE_PORT, true, timeout)
+        .await
+        .is_some()
+    {
         return Some((mapping, "address_dependent".to_string()));
     }
     Some((mapping, "address_and_port_dependent".to_string()))
@@ -826,10 +845,12 @@ pub async fn check(
             res.stun_used = used;
         }
         Err(e) => {
-            res.reason = format!("拿不到自己的公网映射：{e}（UDP 出站可能被封；先看 p2p self 的结论）");
-            res.advice = "先跑 `ncc registry p2p self` 看 NAT 画像；企业网禁 UDP 时只能用客户自托管 \
+            res.reason =
+                format!("拿不到自己的公网映射：{e}（UDP 出站可能被封；先看 p2p self 的结论）");
+            res.advice =
+                "先跑 `ncc registry p2p self` 看 NAT 画像；企业网禁 UDP 时只能用客户自托管 \
                           TURN 或中心搬运。"
-                .to_string();
+                    .to_string();
             return res;
         }
     }
@@ -858,11 +879,8 @@ pub async fn check(
     let mut buf = [0u8; 1500];
     let mut last_sent: Option<Instant> = None;
     while Instant::now() < deadline {
-        if let Ok(Ok((n, from))) = tokio::time::timeout(
-            Duration::from_millis(200),
-            sock.recv_from(&mut buf),
-        )
-        .await
+        if let Ok(Ok((n, from))) =
+            tokio::time::timeout(Duration::from_millis(200), sock.recv_from(&mut buf)).await
         {
             if from.ip() == peer.ip() && from.port() == peer.port() && n >= 20 {
                 match be16(&buf[0..2]) {
@@ -890,7 +908,9 @@ pub async fn check(
             break;
         }
         if last_sent.map_or(true, |t| t.elapsed() >= PUNCH_EVERY) {
-            let _ = sock.send_to(&binding_request(&new_txid(), 0, false), peer).await;
+            let _ = sock
+                .send_to(&binding_request(&new_txid(), 0, false), peer)
+                .await;
             last_sent = Some(Instant::now());
         }
     }
@@ -1057,8 +1077,8 @@ pub async fn parse_peer_addr(s: &str) -> Result<SocketAddr, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::body::Body;
     use crate::store;
+    use axum::body::Body;
 
     fn be32(b: &[u8]) -> u32 {
         u32::from_be_bytes([b[0], b[1], b[2], b[3]])
@@ -1112,7 +1132,9 @@ mod tests {
                 if n < 20 || be16(&buf[0..2]) != BINDING_REQ {
                     continue;
                 }
-                let _ = sock.send_to(&build_message(BINDING_OK, &buf[8..20], &[]), from).await;
+                let _ = sock
+                    .send_to(&build_message(BINDING_OK, &buf[8..20], &[]), from)
+                    .await;
             }
         });
         addr
@@ -1256,7 +1278,9 @@ mod tests {
         let b = resolve_stun("127.0.0.1").await.unwrap();
         assert_eq!(b.port(), DEFAULT_STUN_PORT);
         // turn: 前缀同样认
-        let c = resolve_stun("turn:127.0.0.1:9999?transport=udp").await.unwrap();
+        let c = resolve_stun("turn:127.0.0.1:9999?transport=udp")
+            .await
+            .unwrap();
         assert_eq!(c.port(), 9999);
         assert!(resolve_stun("").await.is_none());
     }
@@ -1265,10 +1289,18 @@ mod tests {
     async fn check_与入口真实对打() {
         let stun = fake_stun().await;
         let servers = vec![stun.to_string()];
-        let r = Responder::start(&servers, Duration::from_secs(3)).await.unwrap();
+        let r = Responder::start(&servers, Duration::from_secs(3))
+            .await
+            .unwrap();
         assert!(r.mapped_addr().starts_with("127.0.0.1:"));
         let peer = loopback_of(r.addr());
-        let res = check(peer, &servers, Duration::from_secs(5), Duration::from_secs(3)).await;
+        let res = check(
+            peer,
+            &servers,
+            Duration::from_secs(5),
+            Duration::from_secs(3),
+        )
+        .await;
         assert!(res.ok, "{res:?}");
         assert_eq!(res.peer_mapped, peer.to_string());
         assert!(!res.my_mapped.is_empty());
@@ -1293,7 +1325,10 @@ mod tests {
         let client = UdpSocket::bind(("127.0.0.1", 0)).await.unwrap();
         let client_addr = client.local_addr().unwrap();
         r.set_peers(vec![client_addr]);
-        assert_eq!(serve_state_of(Some(&r))["peers"][0], client_addr.to_string());
+        assert_eq!(
+            serve_state_of(Some(&r))["peers"][0],
+            client_addr.to_string()
+        );
         client
             .send_to(&binding_request(&new_txid(), 0, false), listen)
             .await
@@ -1356,7 +1391,11 @@ mod tests {
         .await;
         assert!(!res.ok);
         assert!(res.my_mapped.is_empty());
-        assert!(res.reason.starts_with("拿不到自己的公网映射：所有 STUN 都无响应"), "{res:?}");
+        assert!(
+            res.reason
+                .starts_with("拿不到自己的公网映射：所有 STUN 都无响应"),
+            "{res:?}"
+        );
         assert!(res.advice.contains("p2p self"));
     }
 
@@ -1372,8 +1411,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ncc-p2p-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let pool = ncc_core::pool::open_sqlite(&dir.join("t.db")).await.unwrap();
-        ncc_core::pool::migrate(&pool, crate::schema::DDL).await.unwrap();
+        let pool = ncc_core::pool::open_sqlite(&dir.join("t.db"))
+            .await
+            .unwrap();
+        ncc_core::pool::migrate(&pool, crate::schema::DDL)
+            .await
+            .unwrap();
         let mut cfg = crate::config::load().expect("默认配置可加载");
         cfg.public_url = "http://10.0.0.9:8282".to_string();
         cfg.jwt_secret = "test-secret".to_string();
@@ -1420,7 +1463,9 @@ mod tests {
     async fn call(app: &Router, req: Request<Body>) -> (StatusCode, Value) {
         let resp = app.clone().oneshot(req).await.unwrap();
         let status = resp.status();
-        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .unwrap();
         let v = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         (status, v)
     }
@@ -1461,11 +1506,7 @@ mod tests {
         assert_eq!(code, StatusCode::UNAUTHORIZED, "{v}");
         let (code, v) = call(&app, get_req("/api/p2p/serve", "")).await;
         assert_eq!(code, StatusCode::UNAUTHORIZED, "{v}");
-        let (code, v) = call(
-            &app,
-            json_req("POST", "/api/p2p/check", "", json!({})),
-        )
-        .await;
+        let (code, v) = call(&app, json_req("POST", "/api/p2p/check", "", json!({}))).await;
         assert_eq!(code, StatusCode::UNAUTHORIZED, "{v}");
     }
 
@@ -1497,12 +1538,21 @@ mod tests {
         assert_eq!(v["profile"]["filteringBehavior"], "");
         assert_eq!(v["profile"]["mappingMethod"], "multi-stun");
         assert_eq!(v["profile"]["rfc5780Supported"], false);
-        assert_eq!(v["profile"]["advice"].as_str().unwrap().contains("RFC 5780"), true);
+        assert_eq!(
+            v["profile"]["advice"]
+                .as_str()
+                .unwrap()
+                .contains("RFC 5780"),
+            true
+        );
         assert_eq!(v["ice"]["stun"][0], stun.to_string());
         assert_eq!(v["ice"]["turn"][0], "turn:127.0.0.1:3478");
         // 没开入口时给一句怎么开
         assert_eq!(v["serve"]["on"], false);
-        assert!(v["serve"]["hint"].as_str().unwrap().contains("NCCR_P2P_SERVE=1"));
+        assert!(v["serve"]["hint"]
+            .as_str()
+            .unwrap()
+            .contains("NCCR_P2P_SERVE=1"));
     }
 
     #[tokio::test]
@@ -1510,7 +1560,10 @@ mod tests {
         let st = state("default-stun", &[], false).await;
         assert_eq!(
             stun_servers(&st),
-            DEFAULT_STUN.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+            DEFAULT_STUN
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
         );
     }
 
@@ -1636,7 +1689,10 @@ mod tests {
         let (code, v) = call(&app, get_req("/p2p/serve", &reader)).await;
         assert_eq!(code, StatusCode::OK, "{v}");
         assert_eq!(v["serve"]["on"], false);
-        assert!(v["serve"]["hint"].as_str().unwrap().contains("p2p serve --on"));
+        assert!(v["serve"]["hint"]
+            .as_str()
+            .unwrap()
+            .contains("p2p serve --on"));
 
         // 开：缺 on 字段 → 400（Go 的原话）
         let (code, v) = call(&app, json_req("POST", "/p2p/serve", &writer, json!({}))).await;
@@ -1659,8 +1715,14 @@ mod tests {
         assert_eq!(v["serve"]["peers"][0], "127.0.0.1:9999");
         assert_eq!(v["serve"]["requestsTaken"], 0);
         assert!(!v["serve"]["listen"].as_str().unwrap().is_empty());
-        assert!(v["serve"]["mapped"].as_str().unwrap().starts_with("127.0.0.1:"));
-        assert!(v["serve"]["note"].as_str().unwrap().contains("address/port-dependent"));
+        assert!(v["serve"]["mapped"]
+            .as_str()
+            .unwrap()
+            .starts_with("127.0.0.1:"));
+        assert!(v["serve"]["note"]
+            .as_str()
+            .unwrap()
+            .contains("address/port-dependent"));
 
         // 再开一次（幂等）：对端不被空 peer 抹掉
         let (code, v) = call(
@@ -1674,7 +1736,12 @@ mod tests {
         // peer 格式不对
         let (code, v) = call(
             &app,
-            json_req("POST", "/p2p/serve", &writer, json!({"on": true, "peer": "127.0.0.1"})),
+            json_req(
+                "POST",
+                "/p2p/serve",
+                &writer,
+                json!({"on": true, "peer": "127.0.0.1"}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::BAD_REQUEST);

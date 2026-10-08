@@ -231,7 +231,9 @@ async fn list_tickets(State(state): State<AppState>, auth: Auth) -> ApiResult<Re
             ticket_json(state.cfg(), t, &slug)
         })
         .collect();
-    Ok(helpers::ok_json(json!({"tickets": items, "total": items.len()})))
+    Ok(helpers::ok_json(
+        json!({"tickets": items, "total": items.len()}),
+    ))
 }
 
 /// DELETE /api/access/tickets/{id} —— 停用即失效（已兑换的令牌到期前仍有效，但节点令牌的
@@ -268,7 +270,9 @@ async fn ticket_info(
     out["usable"] = json!(tk.usable());
     out["registry"] = registry_block(&state).await;
     let registry = registry_block(&state).await;
-    Ok(helpers::ok_json(json!({"ticket": out, "registry": registry})))
+    Ok(helpers::ok_json(
+        json!({"ticket": out, "registry": registry}),
+    ))
 }
 
 /* ---------------- 兑换（公开：key + secret） ---------------- */
@@ -481,9 +485,7 @@ async fn ticket_namespace(
     let ns = store::namespaces::by_slug(state.pool(), slug)
         .await
         .map_err(ApiError::from_db)?
-        .ok_or_else(|| {
-            ApiError::bad_request("bad_request", format!("namespace {slug} 不存在"))
-        })?;
+        .ok_or_else(|| ApiError::bad_request("bad_request", format!("namespace {slug} 不存在")))?;
     if !helpers::can_manage(state, &ns.id, user_id).await {
         return Err(ApiError::forbidden("你不是该 namespace 的 owner/成员"));
     }
@@ -492,7 +494,12 @@ async fn ticket_namespace(
 
 /// 接入短链：secret 放 fragment。
 fn ticket_link(cfg: &Config, key: &str, secret: &str) -> String {
-    format!("{}/j/{}#{}", cfg.public_url.trim_end_matches('/'), key, secret)
+    format!(
+        "{}/j/{}#{}",
+        cfg.public_url.trim_end_matches('/'),
+        key,
+        secret
+    )
 }
 
 fn ticket_json(cfg: &Config, t: &store::access::AccessTicket, ns_slug: &str) -> Value {
@@ -725,8 +732,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ncc-access-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let pool = ncc_core::pool::open_sqlite(&dir.join("t.db")).await.unwrap();
-        ncc_core::pool::migrate(&pool, crate::schema::DDL).await.unwrap();
+        let pool = ncc_core::pool::open_sqlite(&dir.join("t.db"))
+            .await
+            .unwrap();
+        ncc_core::pool::migrate(&pool, crate::schema::DDL)
+            .await
+            .unwrap();
         let mut cfg = crate::config::load().expect("默认配置可加载");
         cfg.public_url = "http://10.0.0.9:8282".to_string();
         cfg.jwt_secret = "test-secret".to_string();
@@ -752,21 +763,30 @@ mod tests {
 
     /// 建一个用户 + 个人命名空间 + 一把带指定作用域的 API-Key。
     async fn user_with_key(state: &AppState, uid: &str, scopes: &[&str]) -> (String, String) {
-        let u = store::users::create(state.pool(), &format!("用户{uid}"), &format!("{uid}@x.com"), "h")
-            .await
-            .unwrap();
+        let u = store::users::create(
+            state.pool(),
+            &format!("用户{uid}"),
+            &format!("{uid}@x.com"),
+            "h",
+        )
+        .await
+        .unwrap();
         store::namespaces::create_account(state.pool(), &u.id, &u.name, uid)
             .await
             .unwrap();
         let owned: Vec<String> = scopes.iter().map(|s| s.to_string()).collect();
-        let (_k, secret) = store::apikeys::create(state.pool(), &u.id, "t", &owned).await.unwrap();
+        let (_k, secret) = store::apikeys::create(state.pool(), &u.id, "t", &owned)
+            .await
+            .unwrap();
         (u.id, secret)
     }
 
     async fn call(app: &Router, req: Request<Body>) -> (StatusCode, Value) {
         let resp = app.clone().oneshot(req).await.unwrap();
         let status = resp.status();
-        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .unwrap();
         let v = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         (status, v)
     }
@@ -778,7 +798,9 @@ mod tests {
             resp.headers().get("content-type").unwrap(),
             "text/html; charset=utf-8"
         );
-        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20)
+            .await
+            .unwrap();
         (status, String::from_utf8_lossy(&bytes).to_string())
     }
 
@@ -882,7 +904,13 @@ mod tests {
         assert_eq!(t["disabled"], false);
         assert_eq!(t["usable"], true);
         assert!(t["expiresAt"].is_string());
-        assert_eq!(t["linkPattern"], format!("http://10.0.0.9:8282/j/{}#<secret>", t["key"].as_str().unwrap()));
+        assert_eq!(
+            t["linkPattern"],
+            format!(
+                "http://10.0.0.9:8282/j/{}#<secret>",
+                t["key"].as_str().unwrap()
+            )
+        );
         // 默认作用域 = 票据作用域表
         assert_eq!(
             t["scopes"],
@@ -891,7 +919,13 @@ mod tests {
         // secret 32 位 hex，且只在创建时出现
         let secret = v["secret"].as_str().unwrap();
         assert_eq!(secret.len(), 32);
-        assert_eq!(v["link"], format!("http://10.0.0.9:8282/j/{}#{secret}", t["key"].as_str().unwrap()));
+        assert_eq!(
+            v["link"],
+            format!(
+                "http://10.0.0.9:8282/j/{}#{secret}",
+                t["key"].as_str().unwrap()
+            )
+        );
         assert!(v["howto"]["manual"].as_str().unwrap().contains("--key"));
         // 库里只有哈希
         let row = store::access::by_key(st.pool(), t["key"].as_str().unwrap())
@@ -925,7 +959,12 @@ mod tests {
         // 只有非法作用域 → 回落到默认表
         let (_code, v) = call(
             &app,
-            json_req("POST", "/access/tickets", &strong, json!({"scopes": ["胡写"]})),
+            json_req(
+                "POST",
+                "/access/tickets",
+                &strong,
+                json!({"scopes": ["胡写"]}),
+            ),
         )
         .await;
         assert_eq!(v["ticket"]["scopes"].as_array().unwrap().len(), 3);
@@ -933,7 +972,12 @@ mod tests {
         // namespace 不存在 → 400
         let (code, v) = call(
             &app,
-            json_req("POST", "/access/tickets", &strong, json!({"namespace": "nope"})),
+            json_req(
+                "POST",
+                "/access/tickets",
+                &strong,
+                json!({"namespace": "nope"}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::BAD_REQUEST);
@@ -943,7 +987,12 @@ mod tests {
         let (_other, _) = user_with_key(&st, "U-9", &["keys:write"]).await;
         let (code, v) = call(
             &app,
-            json_req("POST", "/access/tickets", &strong, json!({"namespace": "u-9"})),
+            json_req(
+                "POST",
+                "/access/tickets",
+                &strong,
+                json!({"namespace": "u-9"}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::FORBIDDEN);
@@ -1059,7 +1108,10 @@ mod tests {
         .await;
         assert_eq!(code, StatusCode::OK);
         assert_eq!(v["ok"], true);
-        assert!(store::access::by_id(st.pool(), &id).await.unwrap().is_some());
+        assert!(store::access::by_id(st.pool(), &id)
+            .await
+            .unwrap()
+            .is_some());
 
         // 删自己的 → 真删
         let (code, _) = call(
@@ -1073,7 +1125,10 @@ mod tests {
         )
         .await;
         assert_eq!(code, StatusCode::OK);
-        assert!(store::access::by_id(st.pool(), &id).await.unwrap().is_none());
+        assert!(store::access::by_id(st.pool(), &id)
+            .await
+            .unwrap()
+            .is_none());
 
         // 删除要 keys:write
         let (_u, weak) = user_with_key(&st, "U-3", &["registry:read"]).await;
@@ -1111,11 +1166,19 @@ mod tests {
 
         let (code, v) = call(
             &app,
-            json_req("POST", "/access/redeem", "", json!({"key": key, "secret": secret})),
+            json_req(
+                "POST",
+                "/access/redeem",
+                "",
+                json!({"key": key, "secret": secret}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::OK, "{v}");
-        assert_eq!(v["scopes"], json!(["nodes:write", "registry:read", "registry:download"]));
+        assert_eq!(
+            v["scopes"],
+            json!(["nodes:write", "registry:read", "registry:download"])
+        );
         assert_eq!(v["owner"]["namespace"], "u-1");
         assert_eq!(v["ticket"]["key"], key);
         assert_eq!(v["registry"]["role"], "master");
@@ -1128,13 +1191,19 @@ mod tests {
         let info = jwt::parse(&st.cfg().jwt_secret, token).unwrap();
         assert_eq!(info.kind, "node");
         assert!(!info.session);
-        assert_eq!(info.scopes, vec!["nodes:write", "registry:read", "registry:download"]);
+        assert_eq!(
+            info.scopes,
+            vec!["nodes:write", "registry:read", "registry:download"]
+        );
         let payload = ncc_core::jwt::verify_hs256(&st.cfg().jwt_secret, token).unwrap();
         let life = payload["exp"].as_i64().unwrap() - payload["iat"].as_i64().unwrap();
         assert!(life > 86000 && life <= 86400, "有效期应为一整天：{life}");
 
         // 次数记账
-        let row = store::access::by_key(st.pool(), &key).await.unwrap().unwrap();
+        let row = store::access::by_key(st.pool(), &key)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(row.used_count, 1);
         assert!(row.last_used_at.is_some());
     }
@@ -1148,7 +1217,12 @@ mod tests {
         // key 不存在
         let (code, v) = call(
             &app,
-            json_req("POST", "/access/redeem", "", json!({"key": "NK-NOPE", "secret": "s"})),
+            json_req(
+                "POST",
+                "/access/redeem",
+                "",
+                json!({"key": "NK-NOPE", "secret": "s"}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::NOT_FOUND);
@@ -1157,25 +1231,43 @@ mod tests {
         // secret 错
         let (_code, created) = call(
             &app,
-            json_req("POST", "/access/tickets", &strong, json!({"label": "甲", "uses": 1})),
+            json_req(
+                "POST",
+                "/access/tickets",
+                &strong,
+                json!({"label": "甲", "uses": 1}),
+            ),
         )
         .await;
         let key = created["ticket"]["key"].as_str().unwrap().to_string();
         let secret = created["secret"].as_str().unwrap().to_string();
         let (code, v) = call(
             &app,
-            json_req("POST", "/access/redeem", "", json!({"key": key, "secret": "别猜"})),
+            json_req(
+                "POST",
+                "/access/redeem",
+                "",
+                json!({"key": key, "secret": "别猜"}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::UNAUTHORIZED);
         assert_eq!(v["error"]["code"], "bad_secret");
 
         // 体格式错：顶层是数组（Go 也是 400 —— 不能因为 serde 会按字段顺序塞进去就放过）
-        let (code, v) = call(&app, json_req("POST", "/access/redeem", "", json!(["不是对象"]))).await;
+        let (code, v) = call(
+            &app,
+            json_req("POST", "/access/redeem", "", json!(["不是对象"])),
+        )
+        .await;
         assert_eq!(code, StatusCode::BAD_REQUEST, "{v}");
         assert_eq!(v["error"]["message"], "请求体格式错误");
         // 字段类型不对（Go 同样是 400）
-        let (code, _v) = call(&app, json_req("POST", "/access/redeem", "", json!({"key": 1}))).await;
+        let (code, _v) = call(
+            &app,
+            json_req("POST", "/access/redeem", "", json!({"key": 1})),
+        )
+        .await;
         assert_eq!(code, StatusCode::BAD_REQUEST);
         // 顶层 null：Go 的 json.Unmarshal 不报错，留下零值结构体 → 走到「key 不存在」
         let (code, v) = call(&app, json_req("POST", "/access/redeem", "", Value::Null)).await;
@@ -1185,13 +1277,23 @@ mod tests {
         // 次数用尽：第一次成功（这里不带上 node），第二次 403
         let (code, _) = call(
             &app,
-            json_req("POST", "/access/redeem", "", json!({"key": key, "secret": secret})),
+            json_req(
+                "POST",
+                "/access/redeem",
+                "",
+                json!({"key": key, "secret": secret}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::OK);
         let (code, v) = call(
             &app,
-            json_req("POST", "/access/redeem", "", json!({"key": key, "secret": secret})),
+            json_req(
+                "POST",
+                "/access/redeem",
+                "",
+                json!({"key": key, "secret": secret}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::FORBIDDEN);
@@ -1213,7 +1315,12 @@ mod tests {
             .unwrap();
         let (code, v) = call(
             &app,
-            json_req("POST", "/access/redeem", "", json!({"key": key2, "secret": secret2})),
+            json_req(
+                "POST",
+                "/access/redeem",
+                "",
+                json!({"key": key2, "secret": secret2}),
+            ),
         )
         .await;
         assert_eq!(code, StatusCode::FORBIDDEN);

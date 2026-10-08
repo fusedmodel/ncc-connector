@@ -239,7 +239,11 @@ pub async fn list(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<AgentCard>, sqlx::Error> {
-    let limit = if limit <= 0 || limit > MAX_LIMIT { DEFAULT_LIMIT } else { limit };
+    let limit = if limit <= 0 || limit > MAX_LIMIT {
+        DEFAULT_LIMIT
+    } else {
+        limit
+    };
     sqlx::query_as::<_, AgentCard>(
         "SELECT * FROM agent_cards WHERE owner_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
     )
@@ -300,7 +304,9 @@ mod tests {
 
     async fn pool() -> SqlitePool {
         let p = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        ncc_core::pool::migrate(&p, crate::schema::DDL).await.unwrap();
+        ncc_core::pool::migrate(&p, crate::schema::DDL)
+            .await
+            .unwrap();
         p
     }
 
@@ -367,10 +373,7 @@ mod tests {
         assert_ne!(hash_pass(&salt, "abc"), hash_pass(&salt, "abd"));
         assert_ne!(hash_pass(&salt, "abc"), hash_pass("other-salt", "abc"));
         // 与 Go 的 HashCardPass 一致：sha256(salt + ":" + pw)
-        assert_eq!(
-            hash_pass("s", "p"),
-            ncc_core::crypto::sha256_hex(b"s:p")
-        );
+        assert_eq!(hash_pass("s", "p"), ncc_core::crypto::sha256_hex(b"s:p"));
     }
 
     #[tokio::test]
