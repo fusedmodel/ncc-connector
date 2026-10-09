@@ -37,4 +37,4 @@ pub mod web;
 pub const PLATFORM_VERSION: &str = "ncc-server/0.1.0";
 
 /// 内网托管节点版本（原 Go: `httpapi.Version`）。
-pub const REGISTRY_VERSION: &str = "ncc-registry/0.1.1";
+pub const REGISTRY_VERSION: &str = "ncc-registry/0.2.0";

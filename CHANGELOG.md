@@ -13,7 +13,7 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ---
 
-## [Unreleased]
+## [0.2.0] — 2026-10-09
 
 ### Changed · `scaffold` kind label says what it actually is (2026-10-09)
 
