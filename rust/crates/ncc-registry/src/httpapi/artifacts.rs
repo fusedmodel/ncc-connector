@@ -57,7 +57,7 @@ fn kind_meta(k: &str) -> (&'static str, &'static str) {
         "skill" => ("Skill", "给 Agent 的操作手册（SKILL.md）"),
         "mcp" => ("MCP", "Model Context Protocol 服务"),
         "plugin" => ("Plugin", "宿主应用的插件"),
-        "scaffold" => ("Scaffold", "项目脚手架"),
+        "scaffold" => ("Scaffold", "工程脚手架规范（S1~S8：一份 md 就是一件制品）"),
         "docker-image" => ("Docker Image", "容器镜像"),
         "benchmark" => ("Benchmark", "评测基准"),
         "living" => ("Living", "活体节点描述"),

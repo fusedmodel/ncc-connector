@@ -15,6 +15,18 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Changed · `scaffold` kind label says what it actually is (2026-10-09)
+
+A scaffold is now a **markdown spec** (`SCAFFOLD.md`, rules S1–S8) rather than a template archive:
+structure, delivery list and — above all — the **acceptance commands** that decide whether
+generation succeeded. The old label ("项目脚手架", i.e. a template) pointed people at the wrong
+thing, so the kind now reads **工程脚手架规范（S1~S8：一份 md 就是一件制品）**.
+
+- No API change: `scaffold` was already in `ARTIFACT_KINDS`; only its Chinese label moved.
+- Node-side smoke still green (167/0), and `ncc-cli/scripts/scaffold-smoke.sh` publishes a real
+  `kind=scaffold` markdown file here and downloads it back byte-for-byte.
+
+
 ### Added · `huf` artifact kind: user-facing resource packages (2026-10-09)
 
 `.huf` is the sibling of `.hur`: **`.hur` holds things that run, `.huf` holds things people read**
