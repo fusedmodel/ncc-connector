@@ -13,6 +13,22 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ---
 
+## [0.2.2] — 2026-10-20
+
+### Fixed · the container image never built: `include_str!` needs `rust/web` at compile time
+
+`crates/ncc-registry/src/router.rs` embeds the built-in console with
+`include_str!("../../../web/index.html")`, i.e. `<workspace>/web/index.html`. That file exists in a
+normal checkout, but `deploy/Dockerfile` only copied `rust/crates` into the build stage — so the
+real compile failed with `couldn't read .../web/index.html`, and the GHCR image was never pushed.
+
+The build stage now copies `rust/web` as well. (`COPY rust/web /app/web` in the runtime stage could
+not help — by then compilation is already over.)
+
+**No runtime behaviour changes.**
+
+---
+
 ## [0.2.1] — 2026-10-20
 
 ### Fixed · release pipeline: the Intel macOS leg never ran (`macos-13` was retired)

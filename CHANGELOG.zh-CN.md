@@ -14,6 +14,22 @@
 
 ---
 
+## [0.2.2] — 2026-10-20
+
+### 修复 · 容器镜像从来没构建成功过：`include_str!` 在编译期就要 `rust/web`
+
+`crates/ncc-registry/src/router.rs` 用 `include_str!("../../../web/index.html")` 把内置控制台
+嵌进二进制，也就是 `<workspace>/web/index.html`。这个文件在正常 checkout 里当然存在，
+但 `deploy/Dockerfile` 的**编译阶段只拷了 `rust/crates`** —— 于是真正编译时报
+`couldn't read .../web/index.html`，GHCR 镜像一直没推上去。
+
+编译阶段现在把 `rust/web` 也拷进来。（运行阶段那句 `COPY rust/web /app/web` 帮不上忙 ——
+到那时编译早就结束了。）
+
+**运行时行为无变化。**
+
+---
+
 ## [0.2.1] — 2026-10-20
 
 ### 修复 · 发布流水线：Intel macOS 那个构建从来没跑起来（`macos-13` 已退役）

@@ -25,6 +25,13 @@ RUN mkdir -p crates/ncc-core/src crates/ncc-registry/src \
  && cargo build --release --bin ncc-registry
 
 COPY rust/crates ./crates
+# ⚠️ 编译阶段也必须带上 `web/`：`crates/ncc-registry/src/router.rs` 用的是
+#    `include_str!("../../../web/index.html")`（相对 workspace 根，即 /src/web/）。
+#    只拷 `crates/` 的话，Docker 构建会在那一行报
+#    「couldn't read .../web/index.html: No such file or directory」。
+#    本机开发时这个文件天然存在，所以很容易漏 —— v0.2.0/v0.2.1 的镜像就是这么失败的。
+#    （运行阶段的 `COPY rust/web /app/web` 不能替代它：那时已经编译完了。）
+COPY rust/web ./web
 # 真正编译一次（上面那次是空源码的依赖预热）
 RUN touch crates/ncc-core/src/lib.rs crates/ncc-registry/src/main.rs \
  && cargo build --release --bin ncc-registry
