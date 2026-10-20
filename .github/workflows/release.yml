@@ -33,7 +33,10 @@ jobs:
             target: aarch64-unknown-linux-gnu
             artifact: ncc-registry-linux-arm64
             cross: true
-          - runner: macos-13           # Intel
+          # ⚠️ `macos-13`（Intel）已于 2025-12-04 被 GitHub 退役，用它会**永远排队**：
+          #    整个 run 会挂到 24 小时后被自动取消 —— v0.2.0 就这么丢过一次 Release。
+          #    现役的 Intel 标签是 `macos-15-intel`（最后一个 x86_64 macOS 镜像，2027 年退役）。
+          - runner: macos-15-intel     # Intel
             target: x86_64-apple-darwin
             artifact: ncc-registry-darwin-amd64
           - runner: macos-14           # Apple Silicon
