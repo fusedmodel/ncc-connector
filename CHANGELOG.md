@@ -13,6 +13,21 @@ Formatted after [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ---
 
+## [0.2.1] — 2026-10-20
+
+### Fixed · release pipeline: the Intel macOS leg never ran (`macos-13` was retired)
+
+GitHub retired the `macos-13` runner image on **2025-12-04**. A job targeting it is never assigned
+a runner, so the whole release run sat queued and was **auto-cancelled after 24 hours**. That is
+exactly what happened to `v0.2.0`: the tag was pushed, but neither the GitHub Release nor the GHCR
+image was ever produced.
+
+The Intel macOS leg now uses **`macos-15-intel`** (the current x86_64 macOS image).
+
+**No code changes** — the binaries are identical to `0.2.0` apart from the version string.
+
+---
+
 ## [0.2.0] — 2026-10-09
 
 ### Changed · `scaffold` kind label says what it actually is (2026-10-09)
